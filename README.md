@@ -9,7 +9,8 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [GitHub Actions](https://github.com/temesotejam/pcb-workbench/actions): code tests, tscircuit integration coupon, KiCad checks and draft exports.
 - [Web viewer](https://temesotejam.github.io/pcb-workbench/): static preview, deployed by GitHub Actions.
 - [Pages settings](https://github.com/temesotejam/pcb-workbench/settings/pages): choose **GitHub Actions** as the source.
-- [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
+- [Roadmap](docs/ROADMAP.md): implementation status and release gates.
+- [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
 ### What is implemented
 
