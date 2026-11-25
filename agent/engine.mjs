@@ -7,7 +7,7 @@ import { mkdir, writeFile, rm, access, readFile, readdir } from "node:fs/promise
 import { unzipSync, zipSync } from "fflate"
 const execFileAsync=promisify(execFile)
 export async function hashProjectDir(dir){
- const hashes=Object.create(null),allowed=/\\.(eprj3|epcb2|esch2|ecfg|evar|epan2)$/i
+ const hashes=Object.create(null),allowed=/\.(eprj3|epcb2|esch2|ecfg|evar|epan2)$/i
  async function walk(current){for(const entry of await readdir(current,{withFileTypes:true})){const full=path.join(current,entry.name);if(entry.isDirectory())await walk(full);else if(entry.isFile()&&allowed.test(entry.name)){const rel=path.relative(dir,full).replace(/\\/g,"/"),data=await readFile(full);hashes[rel]=createHash("sha256").update(data).digest("hex")}}}
  await walk(dir)
  const sourceRevision=createHash("sha256").update(JSON.stringify(Object.entries(hashes).sort((a,b)=>a[0].localeCompare(b[0])))).digest("hex")
