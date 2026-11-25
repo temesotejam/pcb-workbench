@@ -58,6 +58,58 @@ function nativePanel(p){
  localEnginePanel(p)
  add(p,'h2','設計元データ・AI差分')
  add(p,'p','原本を保持します。AIが作成したJSON差分を適用すると、変更したネイティブ設計だけを新しいZIPに出力します。回路図・配線・部品の位置変更後はEasyEDA公式エンジンで再検証が必要です。')
+ const schematicWireEditor=add(p,'section','')
+ add(schematicWireEditor,'h3','既存回路図ワイヤの端点編集')
+ add(schematicWireEditor,'p','既存SCH_PAGE:LINEの始点・終点だけを編集します。線を移動するとシンボルピンやネットラベルから外れる可能性があります。電気的な接続は保証されません。')
+ const wireRow=add(schematicWireEditor,'p',''),wireSelect=add(wireRow,'select',''),wireRefresh=add(wireRow,'button','回路図ワイヤを読み込む')
+ const wireFields=add(schematicWireEditor,'div',''),wireInputs={}
+ for(const [key,label] of [['startX','Start X (native)'],['startY','Start Y (native)'],['endX','End X (native)'],['endY','End Y (native)']]){
+  const l=add(wireFields,'label',label+' '),input=add(l,'input');input.type='number';input.step='1';wireInputs[key]=input
+ }
+ const wireApply=add(schematicWireEditor,'button','回路図ワイヤの端点を変更')
+ let schematicWires=[]
+ const loadSchematicWires=async()=>{
+  wireRefresh.disabled=true
+  try{
+   const inspection=await inspectSource(nativeSource(entries,board))
+   schematicWires=inspection.documents.filter(x=>x.docType==='SCH_PAGE'&&x.recordType==='LINE'&&['startX','startY','endX','endY'].every(k=>Number.isFinite(x.fields[k])))
+   const counts=new Map()
+   for(const item of schematicWires)counts.set(item.recordId+'|'+item.path,(counts.get(item.recordId+'|'+item.path)||0)+1)
+   schematicWires=schematicWires.filter(item=>counts.get(item.recordId+'|'+item.path)===1)
+   wireSelect.replaceChildren()
+   for(const item of schematicWires){const o=add(wireSelect,'option',item.recordId+' · ('+item.fields.startX+','+item.fields.startY+') → ('+item.fields.endX+','+item.fields.endY+')');o.value=item.recordId+'|'+item.path}
+   if(!schematicWires.length)throw new Error('編集可能な回路図ワイヤがありません')
+   for(const key of Object.keys(wireInputs))wireInputs[key].value=schematicWires[0].fields[key]
+   status.textContent=schematicWires.length+'本の回路図ワイヤを編集対象として読み込みました。'
+  }catch(e){status.textContent='回路図ワイヤ一覧の読み込み失敗: '+e.message}
+  finally{wireRefresh.disabled=false}
+ }
+ wireSelect.onchange=()=>{
+  const item=schematicWires.find(x=>x.recordId+'|'+x.path===wireSelect.value)
+  if(!item)return
+  for(const key of Object.keys(wireInputs))wireInputs[key].value=item.fields[key]
+ }
+ wireRefresh.onclick=loadSchematicWires
+ wireApply.onclick=async()=>{
+  wireApply.disabled=true
+  try{
+   const item=schematicWires.find(x=>x.recordId+'|'+x.path===wireSelect.value)
+   if(!item)throw new Error('編集する回路図ワイヤを選択してください')
+   const values=Object.fromEntries(Object.entries(wireInputs).map(([key,input])=>[key,Number(input.value)]))
+   if(!Object.values(values).every(Number.isFinite))throw new Error('ワイヤ座標には有限の数値を入力してください')
+   if(Math.hypot(values.endX-values.startX,values.endY-values.startY)<0.01)throw new Error('ワイヤ長が0に近すぎます')
+   const set={},expect={}
+   for(const key of Object.keys(values))if(values[key]!==item.fields[key]){set[key]=values[key];expect[key]=item.fields[key]}
+   if(!Object.keys(set).length){status.textContent='変更はありません。';return}
+   if(!confirm('回路図ワイヤ '+item.recordId+' の端点を変更します。\\nシンボルピン・接続点・ラベルから外れる可能性があります。続行しますか？'))return
+   const patch={schema:'pcb-workbench-native-patch/v1',changes:[{path:item.path,baseSha256:item.baseSha256,docType:item.docType,docUuid:item.docUuid,recordType:item.recordType,recordId:item.recordId,expect,set}]}
+   const result=await applyPatchText(JSON.stringify(patch))
+   const rv=result.updateResult?.runtimeVerification
+   status.textContent=result.liveApplied?(rv?.passed?'回路図ワイヤをEasyEDAへ反映し、再読込を確認しました。接続とERCを確認してください。':'書込み後の再読込確認が未完了です。製造データには使用しないでください。'):'回路図ワイヤ変更済みZIPを出力しました。EasyEDAで読み込み、接続とERCを確認してください。'
+   schematicWires=[]
+  }catch(e){status.textContent='回路図ワイヤ編集を中止しました: '+e.message}
+  finally{wireApply.disabled=false}
+ }
  const sourceButton=add(p,'button','元の編集可能な設計ZIP')
  sourceButton.onclick=()=>download(zipSync(nativeSource(entries,board)),board.key+'-native-source.zip','application/zip')
  const inspectButton=add(p,'button','AI編集用レコード一覧JSON')
