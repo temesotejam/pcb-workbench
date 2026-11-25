@@ -118,6 +118,57 @@ function nativePanel(p){
   }catch(e){status.textContent='編集を中止しました: '+e.message}
   finally{applyPosition.disabled=false}
  }
+ const schEditor=add(p,'section','')
+ add(schEditor,'h3','回路図部品の位置・向きを編集')
+ add(schEditor,'p','回路図ネイティブ座標（10 mil単位）で部品シンボルのX/Y位置と回転を変更します。電気的な接続・ネットは変更しません。')
+ const schRow=add(schEditor,'p',''),schSelect=add(schRow,'select',''),schRefresh=add(schRow,'button','回路図部品を読み込む')
+ const sxLabel=add(schEditor,'label','X (native) '),sx=add(sxLabel,'input');sx.type='number';sx.step='1'
+ const syLabel=add(schEditor,'label','Y (native) '),sy=add(syLabel,'input');sy.type='number';sy.step='1'
+ const srLabel=add(schEditor,'label','Rotation (deg) '),sr=add(srLabel,'input');sr.type='number';sr.step='90'
+ const schApply=add(schEditor,'button','回路図部品の位置・向きを適用')
+ let schComponents=[]
+ const loadSchematicComponents=async()=>{
+  schRefresh.disabled=true
+  try{
+   const inspection=await inspectSource(nativeSource(entries,board))
+   schComponents=inspection.documents.filter(x=>x.docType==='SCH_PAGE'&&x.recordType==='COMPONENT'&&x.designator&&['x','y','rotation'].every(k=>Number.isFinite(x.fields[k])))
+   const counts=new Map()
+   for(const item of schComponents)counts.set(item.designator,(counts.get(item.designator)||0)+1)
+   schComponents=schComponents.filter(item=>counts.get(item.designator)===1)
+   schSelect.replaceChildren()
+   for(const item of schComponents){const o=add(schSelect,'option',item.designator+' · X '+item.fields.x+' / Y '+item.fields.y+' / '+item.fields.rotation+'°');o.value=item.recordId+'|'+item.path}
+   if(!schComponents.length)throw new Error('一意に識別できる回路図部品レコードがありません')
+   const first=schComponents[0];sx.value=first.fields.x;sy.value=first.fields.y;sr.value=first.fields.rotation
+   status.textContent=schComponents.length+'個の回路図部品を編集対象として読み込みました。'
+  }catch(e){status.textContent='回路図部品一覧の読み込み失敗: '+e.message}
+  finally{schRefresh.disabled=false}
+ }
+ schSelect.onchange=()=>{
+  const item=schComponents.find(x=>x.recordId+'|'+x.path===schSelect.value)
+  if(!item)return
+  sx.value=item.fields.x;sy.value=item.fields.y;sr.value=item.fields.rotation
+ }
+ schRefresh.onclick=loadSchematicComponents
+ schApply.onclick=async()=>{
+  schApply.disabled=true
+  try{
+   const item=schComponents.find(x=>x.recordId+'|'+x.path===schSelect.value)
+   if(!item)throw new Error('編集する回路図部品を選択してください')
+   const values={x:Number(sx.value),y:Number(sy.value),rotation:Number(sr.value)}
+   if(!Object.values(values).every(Number.isFinite))throw new Error('X/Y/回転には有限の数値を入力してください')
+   if(Math.abs(values.rotation)>3600)throw new Error('回転角は±3600°以内にしてください')
+   const set={},expect={}
+   for(const key of ['x','y','rotation'])if(values[key]!==item.fields[key]){set[key]=values[key];expect[key]=item.fields[key]}
+   if(!Object.keys(set).length){status.textContent='変更はありません。';return}
+   if(!confirm(item.designator+' の回路図上の位置・向きを変更します。\\nX: '+item.fields.x+' → '+values.x+'\\nY: '+item.fields.y+' → '+values.y+'\\n回転: '+item.fields.rotation+' → '+values.rotation+'°\\n\\n電気的な接続は変更しません。続行しますか？'))return
+   const patch={schema:'pcb-workbench-native-patch/v1',changes:[{path:item.path,baseSha256:item.baseSha256,docType:item.docType,docUuid:item.docUuid,recordType:item.recordType,recordId:item.recordId,expect,set}]}
+   const result=await applyPatchText(JSON.stringify(patch))
+   const rv=result.updateResult?.runtimeVerification
+   status.textContent=result.liveApplied?(rv?.passed?'回路図部品の位置・向きをEasyEDAへ反映し、再読込を確認しました。ERC/DRCを再実行してください。':'書込み後の再読込確認が未完了です。製造データには使用しないでください。'):'回路図変更済みZIPを出力しました。EasyEDAで読み込み、表示とERC/DRCを確認してください。'
+   schComponents=[]
+  }catch(e){status.textContent='回路図編集を中止しました: '+e.message}
+  finally{schApply.disabled=false}
+ }
  if(board.nativeBoardName==="NUCLEO-F401RE Rev1.5"){
   const underside=add(p,'button','CN7 / CN10 を裏面へ移動（確認付き）')
   underside.onclick=async()=>{
