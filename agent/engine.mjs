@@ -30,9 +30,12 @@ export function parseCsv(text){
  let delimiter=",",first="",quoted=false
  for(let i=0;i<s.length;i++){
   const c=s[i]
-  if(c==='"'&&(!quoted||s[i+1]==='"')){if(quoted&&s[i+1]==='"')i++;else quoted=!quoted}
-  else if(!quoted&&(c==="\n"||c==="\r"))break
-  else if(!quoted)first+=c
+  if(c==='"'){
+   if(quoted&&s[i+1]==='"'){i++;continue}
+   quoted=!quoted;continue
+  }
+  if(!quoted&&(c==="\n"||c==="\r"))break
+  if(!quoted)first+=c
  }
  if((first.match(/\t/g)||[]).length>(first.match(/,/g)||[]).length)delimiter="\t"
  let row=[],cell="",inQuotes=false
