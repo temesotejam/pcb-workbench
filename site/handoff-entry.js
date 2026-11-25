@@ -2,7 +2,7 @@ import {unzipSync,zipSync} from 'fflate'
 import {nativeSource,inspectSource,applyPatch,reviewFiles} from '../library/native-patch.mjs'
 import {inspectHandoff,selectedPath} from '../library/handoff-core.mjs'
 const $=id=>document.getElementById(id), add=(parent,tag,text)=>{const e=document.createElement(tag);e.textContent=text??'';parent.append(e);return e}
-let entries,report,board,tab='pcb',zoom=1,generation=0,urls=[],agentToken=null,agentImport=null,agentVerification=null
+let entries,report,board,tab='pcb',zoom=1,generation=0,urls=[],agentToken=null,agentImport=null,agentVerification=null,agentToken=null,agentImport=null,agentVerification=null
 const clearUrls=()=>{for(const u of urls)URL.revokeObjectURL(u);urls=[]}
 const objectUrl=(bytes,type)=>{const u=URL.createObjectURL(new Blob([bytes],{type}));urls.push(u);return u}
 function normalizePath(p){if(selectedPath(p))return p;const i=p.indexOf('/');if(i>=0&&selectedPath(p.slice(i+1)))return p.slice(i+1);return null}
@@ -35,8 +35,25 @@ function localEnginePanel(p){
  exp.onclick=async()=>{exp.disabled=true;try{if(!agentVerification)throw new Error('先に公式ERC / DRCを実行してください');const r=await localAgent('export',{boardName:board.name});const raw=atob(r.zipBase64),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);download(bytes,r.fileName,'application/zip');show('確認用データを生成しました。発注承認ではありません。');details.textContent=JSON.stringify(r.manifest,null,2)}catch(e){show('出力失敗: '+e.message)}finally{exp.disabled=false}}
  close.onclick=async()=>{close.disabled=true;try{await localAgent('close',{});agentImport=null;agentVerification=null;show('ローカルセッションを終了しました')}catch(e){show('終了失敗: '+e.message)}finally{close.disabled=false}}
 }
+async function localAgent(path,body,zip=false){
+ if(!agentToken){const boot=await fetch('/api/bootstrap');if(!boot.ok)throw new Error('ローカル起動スクリプトで開いてください');agentToken=(await boot.json()).token}
+ const headers={'X-PWB-Token':agentToken};if(zip)headers['Content-Type']='application/zip';else headers['Content-Type']='application/json'
+ const r=await fetch('/api/'+path,{method:'POST',headers,body:zip?body:JSON.stringify(body??{})})
+ const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));return data
+}
+function localEnginePanel(p){
+ add(p,'h2','EasyEDA Pro ネイティブエンジン')
+ add(p,'p','既存EPRJ3の編集・再検証にはEasyEDA ProデスクトップCLIをローカル接続します。通信は127.0.0.1内だけで、外部公開しません。')
+ const status=add(p,'p','未接続'),connect=add(p,'button','EasyEDA Proに接続'),load=add(p,'button','選択中の基板を読み込む'),verify=add(p,'button','公式ERC / DRCを実行'),exp=add(p,'button','JLCPCB確認用データを生成'),close=add(p,'button','ローカルセッションを閉じる'),details=add(p,'pre','')
+ const show=x=>{status.textContent=x}
+ connect.onclick=async()=>{connect.disabled=true;try{const r=await localAgent('health',{});show('接続済み · EasyEDA Pro '+(r.version||'version unknown')+' · '+(r.versionSupported?'CLI対応':'要更新'));details.textContent=JSON.stringify(r.doctor,null,2)}catch(e){show('接続できません: '+e.message)}finally{connect.disabled=false}}
+ load.onclick=async()=>{load.disabled=true;try{const source=nativeSource(entries,board),payload=zipSync(source);agentImport=await localAgent('import',payload,true);agentImport.boardName=board.name;agentVerification=null;show('ローカル読込済み · '+agentImport.projectName+' · '+agentImport.engineVersion);details.textContent=JSON.stringify(agentImport,null,2)}catch(e){show('読込失敗: '+e.message)}finally{load.disabled=false}}
+ verify.onclick=async()=>{verify.disabled=true;try{if(!agentImport||agentImport.boardName!==board.name)throw new Error('選択中の基板を先にローカルエンジンへ読み込んでください');agentVerification=await localAgent('verify',{boardName:board.name});const ok=agentVerification.pcb?.passed&&agentVerification.schematicPassed;show('公式検証完了 · '+(ok?'全検証PASS':'要確認・違反または未完了あり'));details.textContent=JSON.stringify(agentVerification,null,2)}catch(e){show('検証失敗: '+e.message)}finally{verify.disabled=false}}
+ exp.onclick=async()=>{exp.disabled=true;try{if(!agentVerification||agentVerification.board?.name!==board.name)throw new Error('先に選択中の基板で公式ERC / DRCを実行してください');const r=await localAgent('export',{boardName:board.name});const raw=atob(r.zipBase64),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);download(bytes,r.fileName,'application/zip');show('確認用データを生成しました。発注承認ではありません。');details.textContent=JSON.stringify(r.manifest,null,2)}catch(e){show('出力失敗: '+e.message)}finally{exp.disabled=false}}
+ close.onclick=async()=>{close.disabled=true;try{await localAgent('close',{});agentImport=null;agentVerification=null;show('ローカルセッションを終了しました')}catch(e){show('終了失敗: '+e.message)}finally{close.disabled=false}}
+}
 function nativePanel(p){
- localEnginePanel(p)\n add(p,'h2','設計元データ・AI差分')
+ localEnginePanel(p)\n localEnginePanel(p)\n add(p,'h2','設計元データ・AI差分')
  add(p,'p','原本を保持します。AIが作成したJSON差分を適用すると、変更したネイティブ設計だけを新しいZIPに出力します。回路図・配線・部品の位置変更後はEasyEDA公式エンジンで再検証が必要です。')
  const source=nativeSource(entries,board)
  const sourceButton=add(p,'button','元の編集可能な設計ZIP')
