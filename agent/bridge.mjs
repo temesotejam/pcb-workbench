@@ -112,9 +112,10 @@ export function classifyDrcItems(items,severityField="type"){
  }
  return result
 }
-export function expectedAssemblySideProfile(projectName){
- if(projectName==="NUCLEO-F401RE Rev1.5")return {CN7:"Bottom",CN10:"Bottom"}
- if(projectName==="NUCLEO-F401RE Lower GPIO Proto R1")return {CN7:"Top",CN10:"Top"}
+export function expectedAssemblySideProfile(projectName,boardName=null){
+ const names=[projectName,boardName].filter(x=>typeof x==="string")
+ if(names.some(x=>x.includes("NUCLEO-F401RE Rev1.5")))return {CN7:"Bottom",CN10:"Bottom"}
+ if(names.some(x=>x.includes("Lower GPIO Proto R1")))return {CN7:"Top",CN10:"Top"}
  return {}
 }
 export function buildJlcpcbReviewBundle(input,{verification,projectName=null,boardName,engineVersion,optionalErrors={},sourceRevision=null,sourceFileHashes=null}={}){
@@ -125,7 +126,7 @@ export function buildJlcpcbReviewBundle(input,{verification,projectName=null,boa
  if(!verification?.schematicPassed)blockers.push("Schematic ERC/DRC contains errors, unknown violations or an unavailable detailed result.")
  for(const item of verification?.pcb?.warnings??[])warnings.push("PCB warning: "+(item.ruleName??item.rule??item.explanation??JSON.stringify(item)))
  for(const page of verification?.schematics??[])for(const item of page.warnings??[])warnings.push("Schematic "+page.name+" warning: "+(item.rule??item.type??item.message??JSON.stringify(item)))
- const expectedSideByRef=expectedAssemblySideProfile(projectName)
+ const expectedSideByRef=expectedAssemblySideProfile(projectName,boardName)
  if(!Object.keys(expectedSideByRef).length)warnings.push("No board-specific assembly-side profile is registered for project "+String(projectName??"(unknown)")+".")
  const parity=checkBomCpl(new TextDecoder().decode(files["BOM.csv"]),new TextDecoder().decode(files["CPL.csv"]),{expectedSideByRef})
  blockers.push(...parity.blockers);warnings.push(...parity.warnings)
