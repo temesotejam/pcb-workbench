@@ -202,6 +202,25 @@ function nativePanel(p){
   for(const key of Object.keys(trackInputs))trackInputs[key].value=item.fields[key]
  }
  routeRefresh.onclick=loadRouteRecords
+ const netRow=add(routeEditor,'p',''),netLabel=add(netRow,'label','Track net name '),trackNet=add(netLabel,'input');trackNet.type='text';trackNet.maxLength=256
+ const netApply=add(routeEditor,'button','選択トラックのネット名を変更')
+ routeSelect.addEventListener('change',()=>{const item=routeRecords.find(x=>x.recordId+'|'+x.path===routeSelect.value);if(item)trackNet.value=item.fields.netName??item.net??''})
+ netApply.onclick=async()=>{
+  netApply.disabled=true
+  try{
+   const item=routeRecords.find(x=>x.recordId+'|'+x.path===routeSelect.value)
+   if(!item||typeof item.fields.netName!=='string')throw new Error('ネイティブデータに編集可能なネット名がありません')
+   const next=trackNet.value.trim()
+   if(!next||next.length>256||/[\\r\\n\\0]/.test(next))throw new Error('ネット名が不正です')
+   if(next===item.fields.netName){status.textContent='ネット名に変更はありません。';return}
+   if(!confirm('トラック '+item.recordId+' のネットを '+item.fields.netName+' から '+next+' に変更します。\\nこの1本だけの変更です。接続先パッド・他の配線・ビアは変更されず、ネット分断や短絡の原因になる可能性があります。続行しますか？'))return
+   const patch={schema:'pcb-workbench-native-patch/v1',changes:[{path:item.path,baseSha256:item.baseSha256,docType:item.docType,docUuid:item.docUuid,recordType:item.recordType,recordId:item.recordId,expect:{netName:item.fields.netName},set:{netName:next}}]}
+   const result=await applyPatchText(JSON.stringify(patch))
+   status.textContent=result.liveApplied?'トラックのネット名を変更しました。必ずERC/DRCと接続状態を再確認してください。':'ネット名変更済みZIPを出力しました。EasyEDAで読み込み、ERC/DRCを確認してください。'
+   routeRecords=[]
+  }catch(e){status.textContent='ネット変更を中止しました: '+e.message}
+  finally{netApply.disabled=false}
+ }
  routeApply.onclick=async()=>{
   routeApply.disabled=true
   try{
@@ -255,6 +274,25 @@ function nativePanel(p){
   for(const key of Object.keys(viaInputs))viaInputs[key].value=item.fields[key]
  }
  viaRefresh.onclick=loadViaRecords
+ const viaNetRow=add(viaEditor,'p',''),viaNetLabel=add(viaNetRow,'label','Via net name '),viaNet=add(viaNetLabel,'input');viaNet.type='text';viaNet.maxLength=256
+ const viaNetApply=add(viaEditor,'button','選択ビアのネット名を変更')
+ viaSelect.addEventListener('change',()=>{const item=viaRecords.find(x=>x.recordId+'|'+x.path===viaSelect.value);if(item)viaNet.value=item.fields.netName??item.net??''})
+ viaNetApply.onclick=async()=>{
+  viaNetApply.disabled=true
+  try{
+   const item=viaRecords.find(x=>x.recordId+'|'+x.path===viaSelect.value)
+   if(!item||typeof item.fields.netName!=='string')throw new Error('ネイティブデータに編集可能なネット名がありません')
+   const next=viaNet.value.trim()
+   if(!next||next.length>256||/[\\r\\n\\0]/.test(next))throw new Error('ネット名が不正です')
+   if(next===item.fields.netName){status.textContent='ネット名に変更はありません。';return}
+   if(!confirm('ビア '+item.recordId+' のネットを '+item.fields.netName+' から '+next+' に変更します。\\nこのビアだけの変更です。接続トラックは変更されず、ネット分断や短絡の原因になる可能性があります。続行しますか？'))return
+   const patch={schema:'pcb-workbench-native-patch/v1',changes:[{path:item.path,baseSha256:item.baseSha256,docType:item.docType,docUuid:item.docUuid,recordType:item.recordType,recordId:item.recordId,expect:{netName:item.fields.netName},set:{netName:next}}]}
+   const result=await applyPatchText(JSON.stringify(patch))
+   status.textContent=result.liveApplied?'ビアのネット名を変更しました。必ずERC/DRCと接続状態を再確認してください。':'ビアのネット名変更済みZIPを出力しました。EasyEDAで読み込み、ERC/DRCを確認してください。'
+   viaRecords=[]
+  }catch(e){status.textContent='ビアのネット変更を中止しました: '+e.message}
+  finally{viaNetApply.disabled=false}
+ }
  viaApply.onclick=async()=>{
   viaApply.disabled=true
   try{
