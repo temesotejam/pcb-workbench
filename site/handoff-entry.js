@@ -110,6 +110,54 @@ function nativePanel(p){
   }catch(e){status.textContent='回路図ワイヤ編集を中止しました: '+e.message}
   finally{wireApply.disabled=false}
  }
+ const textEditor=add(p,'section','')
+ add(textEditor,'h3','回路図テキスト・ネットラベル編集')
+ add(textEditor,'p','既存SCH_PAGE:TEXTの文字列・位置・回転を編集します。テキストの種類を自動判定しないため、ネットラベルを変更する場合は回路図上の意味を確認してください。')
+ const textRow=add(textEditor,'p',''),textSelect=add(textRow,'select',''),textRefresh=add(textRow,'button','回路図テキストを読み込む')
+ const textValueLabel=add(textEditor,'label','Text value '),textValue=add(textValueLabel,'input');textValue.type='text';textValue.maxLength=2000
+ const textXLabel=add(textEditor,'label','X (native) '),textX=add(textXLabel,'input');textX.type='number';textX.step='1'
+ const textYLabel=add(textEditor,'label','Y (native) '),textY=add(textYLabel,'input');textY.type='number';textY.step='1'
+ const textRotLabel=add(textEditor,'label','Rotation (deg) '),textRot=add(textRotLabel,'input');textRot.type='number';textRot.step='90'
+ const textApply=add(textEditor,'button','回路図テキストを変更')
+ let schematicTexts=[]
+ const loadSchematicTexts=async()=>{
+  textRefresh.disabled=true
+  try{
+   const inspection=await inspectSource(nativeSource(entries,board))
+   schematicTexts=inspection.documents.filter(x=>x.docType==='SCH_PAGE'&&x.recordType==='TEXT'&&typeof x.fields.value==='string'&&['x','y','rotation'].every(k=>Number.isFinite(x.fields[k])))
+   textSelect.replaceChildren()
+   for(const item of schematicTexts){const o=add(textSelect,'option',item.fields.value.slice(0,80)+' · '+item.recordId);o.value=item.recordId+'|'+item.path}
+   if(!schematicTexts.length)throw new Error('編集可能な回路図テキストがありません')
+   const first=schematicTexts[0];textValue.value=first.fields.value;textX.value=first.fields.x;textY.value=first.fields.y;textRot.value=first.fields.rotation
+   status.textContent=schematicTexts.length+'個の回路図テキストを編集対象として読み込みました。'
+  }catch(e){status.textContent='回路図テキスト一覧の読み込み失敗: '+e.message}
+  finally{textRefresh.disabled=false}
+ }
+ textSelect.onchange=()=>{
+  const item=schematicTexts.find(x=>x.recordId+'|'+x.path===textSelect.value)
+  if(!item)return
+  textValue.value=item.fields.value;textX.value=item.fields.x;textY.value=item.fields.y;textRot.value=item.fields.rotation
+ }
+ textRefresh.onclick=loadSchematicTexts
+ textApply.onclick=async()=>{
+  textApply.disabled=true
+  try{
+   const item=schematicTexts.find(x=>x.recordId+'|'+x.path===textSelect.value)
+   if(!item)throw new Error('編集する回路図テキストを選択してください')
+   const values={value:textValue.value,x:Number(textX.value),y:Number(textY.value),rotation:Number(textRot.value)}
+   if(typeof values.value!=='string'||values.value.length>2000||!Object.values({x:values.x,y:values.y,rotation:values.rotation}).every(Number.isFinite))throw new Error('テキストまたは座標が不正です')
+   if(Math.abs(values.rotation)>3600)throw new Error('回転角は±3600°以内にしてください')
+   const set={},expect={}
+   for(const key of ['value','x','y','rotation'])if(values[key]!==item.fields[key]){set[key]=values[key];expect[key]=item.fields[key]}
+   if(!Object.keys(set).length){status.textContent='変更はありません。';return}
+   if(!confirm('回路図テキストを変更します。\\n元の文字列: '+item.fields.value+'\\n新しい文字列: '+values.value+'\\nネットラベルの場合、接続先ネットが変わる可能性があります。続行しますか？'))return
+   const patch={schema:'pcb-workbench-native-patch/v1',changes:[{path:item.path,baseSha256:item.baseSha256,docType:item.docType,docUuid:item.docUuid,recordType:item.recordType,recordId:item.recordId,expect,set}]}
+   const result=await applyPatchText(JSON.stringify(patch))
+   status.textContent=result.liveApplied?'回路図テキストをEasyEDAへ反映しました。ネットラベルを変更した場合はERC/DRCとネットリストを再確認してください。':'変更済みZIPを出力しました。EasyEDAで読み込み、ネットリストとERC/DRCを確認してください。'
+   schematicTexts=[]
+  }catch(e){status.textContent='回路図テキスト編集を中止しました: '+e.message}
+  finally{textApply.disabled=false}
+ }
  const sourceButton=add(p,'button','元の編集可能な設計ZIP')
  sourceButton.onclick=()=>download(zipSync(nativeSource(entries,board)),board.key+'-native-source.zip','application/zip')
  const inspectButton=add(p,'button','AI編集用レコード一覧JSON')
