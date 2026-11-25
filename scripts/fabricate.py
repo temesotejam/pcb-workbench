@@ -49,7 +49,7 @@ def assembly_rows(parts, positions):
             offset = 0
         if p.get("assembly") != "smd":
             blockers.append(ref + ": non-SMD assembly not yet supported")
-        bom.append({"Comment":p["value"],"Designator":ref,"Footprint":p["footprint"],"JLCPCB Part #":number})
+        bom.append({"Comment":p["value"],"Designator":ref,"Footprint":p.get("package",p["footprint"]),"JLCPCB Part #":number})
         cpl.append({"Designator":ref,"Mid X":f"{x:.6f}","Mid Y":f"{y:.6f}","Rotation":f"{(angle+offset)%360:.4f}","Layer":"Top" if row["Side"].lower() in ("top","front") else "Bottom"})
     return bom, cpl, blockers
 
@@ -98,8 +98,11 @@ def process(root, meta_path):
         if not any(p.suffix.lower()==".gko" or "edge_cuts" in p.name.lower() or "edge.cuts" in p.name.lower() for p in plotted):
             raise ValueError("No identifiable board-outline output")
         with (draft/"positions.csv").open(encoding="utf-8-sig",newline="") as f:
-            bom,cpl,issues=assembly_rows(meta["parts"],list(csv.DictReader(f)))
+            bom,cpl,issues=assembly_rows(summary["parts"],list(csv.DictReader(f)))
         blockers.extend(issues)
+        for p in summary["parts"]:
+            if not p.get("geometryReviewed") or not p.get("datasheetReviewed") or not p.get("availabilityChecked") or not p.get("stock"):
+                blockers.append(p["ref"]+": JLCPCB geometry, datasheet and stock approval incomplete")
         csv_write(draft/"BOM.csv",["Comment","Designator","Footprint","JLCPCB Part #"],bom)
         csv_write(draft/"CPL.csv",["Designator","Mid X","Mid Y","Rotation","Layer"],cpl)
         with zipfile.ZipFile(draft/"Gerber.zip","w",zipfile.ZIP_DEFLATED) as z:

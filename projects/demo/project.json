@@ -1,8 +1,8 @@
 {
   "id": "demo",
   "name": "Integration coupon",
-  "revision": "0.1",
-  "purpose": "Two-resistor pipeline test; not a functional product.",
+  "revision": "0.2",
+  "purpose": "Two-resistor pipeline test using official JLCPCB C17414 identity; no production approval.",
   "release": false,
   "assemblyProfile": "Economic PCBA (candidate only)",
   "layers": [
@@ -19,21 +19,13 @@
   "parts": [
     {
       "ref": "R1",
-      "value": "10k",
-      "footprint": "0805",
-      "lcsc": null,
-      "manufacturerPart": null,
-      "assembly": "smd",
+      "lcsc": "C17414",
       "rotationOffset": null,
       "reviewed": false
     },
     {
       "ref": "R2",
-      "value": "10k",
-      "footprint": "0805",
-      "lcsc": null,
-      "manufacturerPart": null,
-      "assembly": "smd",
+      "lcsc": "C17414",
       "rotationOffset": null,
       "reviewed": false
     }

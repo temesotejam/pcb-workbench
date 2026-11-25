@@ -20,3 +20,8 @@
 - Layer visibility, pan/zoom, component selection, net highlight, 3D and STEP export, design changes and revision comparison.
 - Multiple projects, local/private deployment options; no credentials in repository.
 - First real reference project: a small reviewed board, then complex shields.
+
+## JLCPCB-first update (v0.2)
+- Curated exact C-number library, official identity URLs, passive wrapper with JLCPCB footprint references and source/pad checks.
+- Browser library and optional external jlcsearch discovery; live results are not approved parts.
+- Next: verified full IC imports, local versioned geometry, current stock and PCBA profile checks.

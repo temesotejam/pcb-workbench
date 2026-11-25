@@ -3,12 +3,14 @@ import { CircuitJsonToKicadSchConverter, CircuitJsonToKicadPcbConverter, Circuit
 import { convertCircuitJsonToSchematicSvg, convertCircuitJsonToPcbSvg } from "circuit-to-svg"
 import { cp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises"
 import { resolve } from "node:path"
+import { resolveParts, assertSourceParity } from "../library/parts"
 
 const root = resolve(import.meta.dir, "..")
 const out = resolve(root, "dist")
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
 await cp(resolve(root, "site"), out, { recursive: true })
+await cp(resolve(root, "library", "catalog.json"), resolve(out,"catalog.json"))
 const index = []
 let failed = false
 for (const id of (await readdir(resolve(root, "projects"))).sort()) {
@@ -18,13 +20,15 @@ for (const id of (await readdir(resolve(root, "projects"))).sort()) {
   if (meta.id !== id) throw new Error("Project id mismatch: " + id)
   const path = resolve(out, "projects", id)
   await mkdir(path, { recursive: true })
-  const result = {id, name: meta.name, revision: meta.revision, purpose: meta.purpose, status:"blocked", parts:meta.parts, errors: [] as string[], files: [] as string[]}
+  const result = {id, name: meta.name, revision: meta.revision, purpose: meta.purpose, status:"blocked", parts:[] as ReturnType<typeof resolveParts>, errors: [] as string[], files: [] as string[]}
   try {
+    result.parts = resolveParts(meta.parts)
     const Design = (await import(resolve(dir, "design.tsx"))).default
     const circuit = new Circuit()
     circuit.add(<Design />)
     await circuit.renderUntilSettled()
     const json = circuit.getCircuitJson()
+    assertSourceParity(json,result.parts)
     await writeFile(resolve(path,"circuit.json"),JSON.stringify(json,null,2))
     await writeFile(resolve(path,"schematic.svg"),convertCircuitJsonToSchematicSvg(json))
     await writeFile(resolve(path,"pcb.svg"),convertCircuitJsonToPcbSvg(json))

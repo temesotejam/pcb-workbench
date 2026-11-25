@@ -1,3 +1,4 @@
+import { initCatalog } from "./catalog.js"
 const $=id=>document.getElementById(id)
 let project,tab="schematic",zoom=1,request=0
 const validSlug=s=>/^[a-z0-9][a-z0-9-]*$/.test(s)
@@ -14,8 +15,8 @@ function draw(){
     img.onerror=()=>{c.replaceChildren();add("p","プレビューの読み込みに失敗しました。",c)}
   }else if(tab==="parts"){
     const t=add("table","",c),head=add("tr","",t)
-    for(const h of ["Ref","Value","Footprint","LCSC","Review"])add("th",h,head)
-    for(const p of project.parts){const r=add("tr","",t);for(const v of [p.ref,p.value,p.footprint,p.lcsc||"未選定",p.reviewed?"Reviewed":"未確認"])add("td",v,r)}
+    for(const h of ["Ref","Value","Footprint","LCSC","MPN","Review"])add("th",h,head)
+    for(const p of project.parts){const r=add("tr","",t);for(const v of [p.ref,p.value,p.footprint,p.lcsc||"未選定",p.manufacturerPart||"未選定",p.reviewed?"Reviewed":"未確認"])add("td",v,r)}
   }else if(tab==="reports"){
     add("h2","製造リリース: 未承認",c)
     const messages=[...(project.errors||[]),...(project.blockers||[])]
@@ -38,3 +39,7 @@ document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{tab=b.dataset.
 $("in").onclick=()=>{zoom=Math.min(4,zoom*1.25);draw()};$("out").onclick=()=>{zoom=Math.max(.25,zoom/1.25);draw()};$("reset").onclick=()=>{zoom=1;draw()}
 $("projects").onchange=e=>load(e.target.value)
 try{const projects=await json("projects.json");for(const p of projects.filter(p=>validSlug(p.id))){const o=add("option",p.name,$("projects"));o.value=p.id}if(!$("projects").options.length)throw new Error("No projects");$("projects").disabled=false;await load($("projects").value)}catch(e){$("state").textContent="ビルドデータがありません";$("content").textContent=String(e)}
+
+$("library-toggle").onclick=()=>{$("catalog-panel").hidden=false;$("catalog-panel").scrollIntoView({block:"start"})}
+$("catalog-close").onclick=()=>{$("catalog-panel").hidden=true;$("library-toggle").focus()}
+await initCatalog()

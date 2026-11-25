@@ -4,7 +4,7 @@ AI-operated, browser-based PCB design and manufacturing workspace for JLCPCB.
 
 ユーザーはチャットで設計を指示し、AIがGitHubの設計ソースを編集・検証します。ユーザーはブラウザで結果を確認し、最終的なJLCPCBへのアップロード、発注、決済だけを行います。
 
-## Current status: v0.1 integration coupon — NOT READY FOR ORDER
+## Current status: v0.2 JLCPCB-first integration coupon — NOT READY FOR ORDER
 
 [![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
 
@@ -12,6 +12,10 @@ AI-operated, browser-based PCB design and manufacturing workspace for JLCPCB.
 - [Web viewer](https://temesotejam.github.io/pcb-workbench/): available after the first successful Pages deployment.
 - [Pages settings](https://github.com/temesotejam/pcb-workbench/settings/pages): select GitHub Actions as Source once if not already configured.
 - [Roadmap](docs/ROADMAP.md): implementation milestones and acceptance criteria.
+
+## JLCPCB-first parts
+
+See [the parts policy](docs/PARTS.md). Register and verify actual JLCPCB C-numbers before designing. The browser exposes registered parts and an explicitly labeled external search. The current coupon uses C17414; the actual import, stock, datasheet and rotation require verification.
 
 ## Design pipeline
 
