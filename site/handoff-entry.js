@@ -39,6 +39,7 @@ function localEnginePanel(p){
  close.onclick=async()=>{close.disabled=true;try{await localAgent('close',{});agentImport=null;agentVerification=null;show('ローカルセッションを終了しました')}catch(e){show('終了失敗: '+e.message)}finally{close.disabled=false}}
 }
 async function applyPatchText(patchText){
+ if(agentImport&&agentImport.boardName!==board.name)throw new Error('接続中のEasyEDAプロジェクトと選択中の引き継ぎ基板が異なります。正しい基板へアタッチし直してください。')
  const source=nativeSource(entries,board)
  const baseHashes=Object.fromEntries(await Promise.all(Object.entries(source).map(async([name,data])=>[name,await hash(data)])))
  const r=await applyPatch(source,JSON.parse(patchText))
