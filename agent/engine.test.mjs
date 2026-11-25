@@ -89,6 +89,14 @@ test("JLCPCB assembly side policy blocks a connector placed on the wrong board s
  assert.equal(right.cplNormalized[0].Layer,"Bottom")
 })
 
+test("JLCPCB CPL rotations are normalized without guessing mirrored-side offsets",()=>{
+ const bom='Quantity,Designator,Comment,Footprint,LCSC Part #\r\n1,R1,10k,0603,C17414\r\n'
+ const cpl='Designator,Mid X,Mid Y,Rotation,Layer\r\nR1,1,2,-90,Bottom\r\n'
+ const result=checkBomCpl(bom,cpl)
+ assert.equal(result.cplNormalized[0].Rotation,'270.0000')
+ assert.ok(result.warnings.some(x=>x.includes('orientation in JLCPCB preview')))
+ assert.equal(result.cplNormalized[0].Layer,'Bottom')
+})
 test("JLCPCB export rejects empty BOM/CPL and invalid grouped quantities",()=>{
  const empty=checkBomCpl("Quantity,Designator,Comment,Footprint,LCSC Part #\r\n","Designator,Mid X,Mid Y,Rotation,Layer\r\n")
  assert.ok(empty.blockers.includes("BOM is empty"))
