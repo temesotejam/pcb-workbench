@@ -160,8 +160,8 @@ test("JLCPCB review bundle contains normalized BOM/CPL, Gerbers, hashes and a fa
  })
  const result=buildJlcpcbReviewBundle({
   "Gerber.zip":gerber,
-  "BOM.csv":enc("Quantity,Designator,Comment,Footprint,LCSC Part #\\r\\n1,R1,10k,0603,C17414\\r\\n"),
-  "CPL.csv":enc("Designator,Mid X,Mid Y,Rotation,Layer,SMD\\r\\nR1,1.2,-2.3,90,Top,Yes\\r\\n"),
+  "BOM.csv":enc("Quantity,Designator,Comment,Footprint,LCSC Part #\r\n1,R1,10k,0603,C17414\r\n"),
+  "CPL.csv":enc("Designator,Mid X,Mid Y,Rotation,Layer,SMD\r\nR1,1.2,-2.3,90,Top,Yes\r\n"),
   "Board.step":enc("step"),"Netlist.net":enc("netlist")
  },{
   verification:{pcb:{passed:true,warnings:[]},schematicPassed:true,schematics:[]},
@@ -181,8 +181,8 @@ test("JLCPCB review bundle blocks missing source revision and DRC failures",()=>
  const gerber=zipSync({"board.GTL":enc("x"),"board.GBL":enc("x"),"board.GTS":enc("x"),"board.GBS":enc("x"),"board.GKO":enc("x"),"board.DRL":enc("x")})
  const result=buildJlcpcbReviewBundle({
   "Gerber.zip":gerber,
-  "BOM.csv":enc("Quantity,Designator,Comment,Footprint,LCSC Part #\\r\\n1,R1,10k,0603,C17414\\r\\n"),
-  "CPL.csv":enc("Designator,Mid X,Mid Y,Rotation,Layer\\r\\nR1,1,2,90,Top\\r\\n")
+  "BOM.csv":enc("Quantity,Designator,Comment,Footprint,LCSC Part #\r\n1,R1,10k,0603,C17414\r\n"),
+  "CPL.csv":enc("Designator,Mid X,Mid Y,Rotation,Layer\r\nR1,1,2,90,Top\r\n")
  },{
   verification:{pcb:{passed:false,warnings:[]},schematicPassed:false,schematics:[]},
   boardName:"Coupon"
