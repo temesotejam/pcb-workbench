@@ -117,6 +117,41 @@ export function expectedAssemblySideProfile(projectName){
  if(projectName==="NUCLEO-F401RE Lower GPIO Proto R1")return {CN7:"Top",CN10:"Top"}
  return {}
 }
+export function buildJlcpcbReviewBundle(input,{verification,projectName=null,boardName,engineVersion,optionalErrors={},sourceRevision=null,sourceFileHashes=null}={}){
+ const files={...input},blockers=[],warnings=[]
+ if(!sourceRevision)blockers.push("Native source revision could not be captured; this export is not bound to a verified project snapshot.")
+ for(const required of ["Gerber.zip","BOM.csv","CPL.csv"])if(!files[required]?.length)throw new Error("Required native export missing: "+required)
+ if(!verification?.pcb?.passed)blockers.push("PCB DRC contains errors, unknown violations or an unavailable detailed result.")
+ if(!verification?.schematicPassed)blockers.push("Schematic ERC/DRC contains errors, unknown violations or an unavailable detailed result.")
+ for(const item of verification?.pcb?.warnings??[])warnings.push("PCB warning: "+(item.ruleName??item.rule??item.explanation??JSON.stringify(item)))
+ for(const page of verification?.schematics??[])for(const item of page.warnings??[])warnings.push("Schematic "+page.name+" warning: "+(item.rule??item.type??item.message??JSON.stringify(item)))
+ const expectedSideByRef=expectedAssemblySideProfile(projectName)
+ if(!Object.keys(expectedSideByRef).length)warnings.push("No board-specific assembly-side profile is registered for project "+String(projectName??"(unknown)")+".")
+ const parity=checkBomCpl(new TextDecoder().decode(files["BOM.csv"]),new TextDecoder().decode(files["CPL.csv"]),{expectedSideByRef})
+ blockers.push(...parity.blockers);warnings.push(...parity.warnings)
+ files["BOM.csv"]=new TextEncoder().encode(csvString(["Comment","Designator","Footprint","LCSC Part #","Quantity"],parity.bomNormalized))
+ files["CPL.csv"]=new TextEncoder().encode(csvString(["Designator","Mid X","Mid Y","Layer","Rotation"],parity.cplNormalized))
+ const gerberEntries=unzipSync(files["Gerber.zip"]),gerberFiles=Object.keys(gerberEntries).filter(name=>gerberEntries[name]?.length>0)
+ const names=gerberFiles.map(x=>x.toUpperCase()),has=suffixes=>names.some(name=>suffixes.some(suffix=>name.endsWith(suffix)))
+ if(!gerberFiles.length)blockers.push("Gerber archive is empty.")
+ const folded=gerberFiles.map(x=>x.toLowerCase())
+ if(new Set(folded).size!==folded.length)blockers.push("Gerber archive contains duplicate case-insensitive filenames.")
+ for(const name of gerberFiles)if(name.startsWith("/")||name.includes("\\")||name.split("/").some(part=>part===".."||part==="."))blockers.push("Unsafe Gerber archive path: "+name)
+ for(const [label,suffix] of [["top copper",".GTL"],["bottom copper",".GBL"],["top solder mask",".GTS"],["bottom solder mask",".GBS"],["board outline",".GKO"],["plated drill",".DRL"]])if(!has([suffix]))blockers.push("Missing Gerber layer/file: "+label)
+ if(parity.cplNormalized.some(x=>x.SMD==="Yes"&&x.Layer==="Top")&&!has([".GTP"]))blockers.push("Top-side SMD parts exist but top paste Gerber is missing.")
+ if(parity.cplNormalized.some(x=>x.SMD==="Yes"&&x.Layer==="Bottom")&&!has([".GBP",".GBB"]))blockers.push("Bottom-side SMD parts exist but bottom paste Gerber is missing.")
+ warnings.push("EasyEDA Pro manufacture-data APIs are beta preview APIs; validate exported files independently.")
+ warnings.push("JLCPCB stock, exact assembly eligibility, THT process, component-side orientation and final upload preview have not been confirmed.")
+ warnings.push("Physical fit, electrical, thermal and safety validation remain the engineer's responsibility.")
+ if(!files["Board.step"])warnings.push("STEP export is unavailable; mechanical 3D review must use the native CAD project.")
+ if(!files["Netlist.net"])warnings.push("Native schematic netlist export is unavailable; electrical connectivity parity remains unverified.")
+ files["DO_NOT_ORDER.txt"]=new TextEncoder().encode("REVIEW ONLY — NOT APPROVED FOR ORDER.\nConfirm JLCPCB stock and assembly eligibility, BOM/CPL orientation, netlist parity, all DRC/physical checks and JLCPCB upload preview before ordering.\n")
+ files["JLCPCB_UPLOAD_GUIDE.txt"]=new TextEncoder().encode("JLCPCB REVIEW PACKAGE\n\n1. Upload Gerber.zip in the PCB order page and inspect every parsed layer and board outline.\n2. For PCBA, upload BOM.csv and CPL.csv separately in the assembly page.\n3. Confirm every LCSC part number, MPN, footprint, stock, assembly class and quantity.\n4. Inspect top/bottom side, rotation and connector orientation in the placement preview.\n5. Review REVIEW_ONLY.json and resolve every blocker and warning.\n6. This bundle is not order-approved. DO_NOT_ORDER.txt remains in force until engineering and factory preview checks pass.\n")
+ const outputHashes=Object.fromEntries(Object.entries(files).map(([name,data])=>[name,createHash("sha256").update(data).digest("hex")]))
+ const manifest={schema:"pcb-workbench-bridge-export/v1",projectName,boardName,expectedSideByRef,sourceRevision,sourceFileHashes,engine:"EasyEDA Pro API Gateway / Bridge Server",engineVersion,generatedAt:new Date().toISOString(),verification,parity,gerberFiles,outputHashes,optionalErrors,blockers,warnings,orderReady:false,status:blockers.length?"BLOCKED":"REVIEW_ONLY"}
+ files["REVIEW_ONLY.json"]=new TextEncoder().encode(JSON.stringify(manifest,null,2))
+ return {files,manifest,zip:zipSync(files,{level:6}),verification}
+}
 export async function bridgeExportBoard(port,windowId,boardName,projectName=null,projectDir=null){
  const verification=await bridgeVerifyBoard(port,windowId,boardName)
  const sourceBefore=projectDir?await hashProjectDir(projectDir):null
@@ -128,39 +163,11 @@ export async function bridgeExportBoard(port,windowId,boardName,projectName=null
   if(!value)continue
   const data=Buffer.from(value.b64,"base64")
   if(data.length!==value.size||!data.length)throw new Error("Export size mismatch: "+key)
-  files[({gerber:"Gerber.zip",bom:"BOM.csv",cpl:"CPL.csv",step:"Board.step",netlist:"Netlist.net"})[key]]=new Uint8Array(data)
+  const name=({gerber:"Gerber.zip",bom:"BOM.csv",cpl:"CPL.csv",step:"Board.step",netlist:"Netlist.net"})[key]
+  if(!name)throw new Error("Unknown manufacturing export type: "+key)
+  files[name]=new Uint8Array(data)
  }
- for(const required of ["Gerber.zip","BOM.csv","CPL.csv"])if(!files[required])throw new Error("Required native export missing: "+required)
- const blockers=[],warnings=[]
- if(!sourceAfter?.sourceRevision)blockers.push("Native source revision could not be captured; this export is not bound to a verified project snapshot.")
- if(!verification.pcb?.passed)blockers.push("PCB DRC contains errors, unknown violations or an unavailable detailed result.")
- if(!verification.schematicPassed)blockers.push("Schematic ERC/DRC contains errors, unknown violations or an unavailable detailed result.")
- for(const item of verification.pcb?.warnings??[])warnings.push("PCB warning: "+(item.ruleName??item.rule??item.explanation??JSON.stringify(item)))
- for(const page of verification.schematics??[])for(const item of page.warnings??[])warnings.push("Schematic "+page.name+" warning: "+(item.rule??item.type??item.message??JSON.stringify(item)))
- const expectedSideByRef=expectedAssemblySideProfile(projectName)
- if(!Object.keys(expectedSideByRef).length)warnings.push("No board-specific assembly-side profile is registered for project "+String(projectName??"(unknown)")+".")
- const parity=checkBomCpl(new TextDecoder().decode(files["BOM.csv"]),new TextDecoder().decode(files["CPL.csv"]),{expectedSideByRef})
- blockers.push(...parity.blockers);warnings.push(...parity.warnings)
- files["BOM.csv"]=new TextEncoder().encode(csvString(["Comment","Designator","Footprint","LCSC Part #","Quantity"],parity.bomNormalized))
- files["CPL.csv"]=new TextEncoder().encode(csvString(["Designator","Mid X","Mid Y","Layer","Rotation"],parity.cplNormalized))
- const gerberEntries=unzipSync(files["Gerber.zip"]),gerberFiles=Object.keys(gerberEntries).filter(name=>gerberEntries[name]?.length>0)
- const names=gerberFiles.map(x=>x.toUpperCase()),has=suffixes=>names.some(name=>suffixes.some(suffix=>name.endsWith(suffix)))
- if(!gerberFiles.length)blockers.push("Gerber archive is empty.")
- for(const [label,suffix] of [["top copper",".GTL"],["bottom copper",".GBL"],["top solder mask",".GTS"],["bottom solder mask",".GBS"],["board outline",".GKO"],["plated drill",".DRL"]])if(!has([suffix]))blockers.push("Missing Gerber layer/file: "+label)
- if(parity.cplNormalized.some(x=>x.SMD==="Yes"&&x.Layer==="Top")&&!has([".GTP"]))blockers.push("Top-side SMD parts exist but top paste Gerber is missing.")
- if(parity.cplNormalized.some(x=>x.SMD==="Yes"&&x.Layer==="Bottom")&&!has([".GBP",".GBB"]))blockers.push("Bottom-side SMD parts exist but bottom paste Gerber is missing.")
- warnings.push("EasyEDA Pro manufacture-data APIs are beta preview APIs; validate exported files independently.")
- warnings.push("JLCPCB stock, exact assembly eligibility, THT process, component-side orientation and final upload preview have not been confirmed.")
- warnings.push("Physical fit, electrical, thermal and safety validation remain the engineer's responsibility.")
- if(!files["Board.step"])warnings.push("STEP export is unavailable; mechanical 3D review must use the native CAD project.")
- if(!files["Netlist.net"])warnings.push("Native schematic netlist export is unavailable; electrical connectivity parity remains unverified.")
- const manifest={schema:"pcb-workbench-bridge-export/v1",projectName,boardName,expectedSideByRef,sourceRevision:sourceAfter?.sourceRevision??null,sourceFileHashes:sourceAfter?.hashes??null,engine:"EasyEDA Pro API Gateway / Bridge Server",engineVersion:result.engineVersion,generatedAt:new Date().toISOString(),verification,parity,gerberFiles,outputHashes:null,optionalErrors:result.optionalErrors,blockers,warnings,orderReady:false,status:blockers.length?"BLOCKED":"REVIEW_ONLY"}
- files["REVIEW_ONLY.json"]=new TextEncoder().encode(JSON.stringify(manifest,null,2))
- files["DO_NOT_ORDER.txt"]=new TextEncoder().encode("REVIEW ONLY — NOT APPROVED FOR ORDER.\nConfirm JLCPCB stock and assembly eligibility, BOM/CPL orientation, netlist parity, all DRC/physical checks and JLCPCB upload preview before ordering.\n")
- files["JLCPCB_UPLOAD_GUIDE.txt"]=new TextEncoder().encode("JLCPCB REVIEW PACKAGE\n\n1. Upload Gerber.zip in the PCB order page and inspect every parsed layer and board outline.\n2. For PCBA, upload BOM.csv and CPL.csv separately in the assembly page.\n3. Confirm every LCSC part number, MPN, footprint, stock, assembly class and quantity.\n4. Inspect top/bottom side, rotation and connector orientation in the placement preview.\n5. Review REVIEW_ONLY.json and resolve every blocker and warning.\n6. This bundle is not order-approved. DO_NOT_ORDER.txt remains in force until engineering and factory preview checks pass.\n")
- const outputHashes=Object.fromEntries(Object.entries(files).map(([name,data])=>[name,createHash("sha256").update(data).digest("hex")]))
- manifest.outputHashes=outputHashes
- return {files,manifest,zip:zipSync(files,{level:6}),verification}
+ return buildJlcpcbReviewBundle(files,{verification,projectName,boardName,engineVersion:result.engineVersion,optionalErrors:result.optionalErrors,sourceRevision:sourceAfter?.sourceRevision??null,sourceFileHashes:sourceAfter?.hashes??null})
 }
 
 export function nativeDocumentCounts(entries){
