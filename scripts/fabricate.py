@@ -72,19 +72,54 @@ def process(root, meta_path):
     gerber.mkdir(parents=True, exist_ok=True)
     # Absolute coordinates for all three exports; no independently shifted origins.
     checks = [
-        ["sch","erc","--severity-all","--exit-code-violations","--format","json","-o",dest/"erc.json",sch],
-        ["pcb","drc","--schematic-parity","--severity-all","--exit-code-violations","--format","json","-o",dest/"drc.json",board],
+        ["sch","erc","--severity-all","--format","json","-o",dest/"erc.json",sch],
+        ["pcb","drc","--schematic-parity","--severity-all","--format","json","-o",dest/"drc.json",board],
     ]
     checks_ok = True
+    warnings = []
     for cmd in checks:
         if run(cmd,log) != 0:
             checks_ok = False
-            blockers.append(cmd[1].upper() + " did not pass")
+            blockers.append(cmd[1].upper() + " command failed")
+    erc_path, drc_path = dest/"erc.json", dest/"drc.json"
     for report in ("erc.json","drc.json"):
         if (dest/report).is_file():
             summary["files"].append(report)
         else:
+            checks_ok = False
             blockers.append(report + " missing")
+    if erc_path.is_file():
+        erc = json.loads(erc_path.read_text())
+        violations = [v for sheet in erc.get("sheets",[]) for v in sheet.get("violations",[])]
+        errors = [v for v in violations if str(v.get("severity","")).lower() in ("error","fatal","fatalerror")]
+        unknown = [v for v in violations if str(v.get("severity","")).lower() not in ("error","fatal","fatalerror","warning","exclusion")]
+        warnings.extend({"source":"ERC",**v} for v in violations if str(v.get("severity","")).lower()=="warning")
+        if errors:
+            checks_ok = False
+            blockers.append("ERC has " + str(len(errors)) + " error(s)")
+        if unknown:
+            checks_ok = False
+            blockers.append("ERC has findings with unknown severity")
+    if drc_path.is_file():
+        drc = json.loads(drc_path.read_text())
+        violations = drc.get("violations",[])
+        errors = [v for v in violations if str(v.get("severity","")).lower() in ("error","fatal","fatalerror")]
+        unknown = [v for v in violations if str(v.get("severity","")).lower() not in ("error","fatal","fatalerror","warning","exclusion")]
+        warnings.extend({"source":"DRC",**v} for v in violations if str(v.get("severity","")).lower()=="warning")
+        parity = drc.get("schematic_parity",[])
+        unconnected = drc.get("unconnected_items",[])
+        if errors:
+            checks_ok = False
+            blockers.append("DRC has " + str(len(errors)) + " error(s)")
+        if unknown:
+            checks_ok = False
+            blockers.append("DRC has findings with unknown severity")
+        if parity:
+            checks_ok = False
+            blockers.append("Schematic/PCB parity has " + str(len(parity)) + " issue(s)")
+        if unconnected:
+            checks_ok = False
+            blockers.append("PCB has " + str(len(unconnected)) + " unconnected item(s)")
     commands = [
         ["pcb","export","gerbers","--layers",",".join(meta["layers"]),"-o",str(gerber)+"/",board],
         ["pcb","export","drill","--format","excellon","-o",str(gerber)+"/",board],
@@ -120,7 +155,7 @@ def process(root, meta_path):
     blockers.append("Production release gate disabled in v0.1; manual JLCPCB preview and engineering review not implemented.")
     ok = ok and checks_ok
     summary.update(status="draft" if ok else "blocked", blockers=blockers, orderReady=False)
-    (dest/"validation.json").write_text(json.dumps({"blockers":blockers,"commands":log,"orderReady":False},indent=2))
+    (dest/"validation.json").write_text(json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False},indent=2))
     summary["files"].append("validation.json")
     summary_path.write_text(json.dumps(summary,indent=2))
     return ok

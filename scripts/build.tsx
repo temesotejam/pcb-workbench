@@ -63,7 +63,11 @@ function snapLabelsAndWiresToSymbolPins(source:string){
     const at=block.text.match(/^\(label\s+"([^"]+)"[\s\S]*?\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/)
     return at?[{name:at[1],x:Number(at[2]),y:Number(at[3])}]:[]
   })
-  const replacements=new Map<string,{x:number,y:number}>()
+  const wires=sexprBlocks(source,"(wire").flatMap(block=>{
+    const pts=[...block.text.matchAll(/\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)/g)]
+    return pts.length===2?[{a:{x:Number(pts[0][1]),y:Number(pts[0][2])},b:{x:Number(pts[1][1]),y:Number(pts[1][2])}}]:[]
+  })
+  const replacements=new Map<string,{pin:{x:number,y:number},label:{x:number,y:number}}>()
   for(const instance of sexprBlocks(source,"(symbol")){
     const libId=instance.text.match(/\(lib_id\s+"([^"]+)"/)?.[1]
     if(!libId)continue
@@ -71,8 +75,7 @@ function snapLabelsAndWiresToSymbolPins(source:string){
     const unit=Number(instance.text.match(/\(unit\s+(\d+)\)/)?.[1]??0)
     if(!at)continue
     const originX=Number(at[1]),originY=Number(at[2]),angle=Number(at[3])*Math.PI/180
-    const pins=pinBySymbolUnit.get(libId+"|"+unit)??[]
-    for(const pin of pins){
+    for(const pin of pinBySymbolUnit.get(libId+"|"+unit)??[]){
       const x=originX+pin.x*Math.cos(angle)-pin.y*Math.sin(angle)
       const y=originY-(pin.x*Math.sin(angle)+pin.y*Math.cos(angle))
       const candidates=labels.filter(label=>{
@@ -82,26 +85,33 @@ function snapLabelsAndWiresToSymbolPins(source:string){
       if(candidates.length!==1)continue
       const old=candidates[0],key=old.x.toFixed(5)+","+old.y.toFixed(5)
       const prior=replacements.get(key)
-      if(prior&&(Math.abs(prior.x-x)>0.01||Math.abs(prior.y-y)>0.01))continue
-      replacements.set(key,{x,y})
+      if(prior&&(Math.abs(prior.pin.x-x)>0.01||Math.abs(prior.pin.y-y)>0.01))continue
+      const connected=wires.filter(w=>(
+        Math.abs(w.a.x-old.x)<=0.01&&Math.abs(w.a.y-old.y)<=0.01
+      )||(
+        Math.abs(w.b.x-old.x)<=0.01&&Math.abs(w.b.y-old.y)<=0.01
+      ))
+      let labelTarget={x,y}
+      if(connected.length===1){
+        const w=connected[0]
+        labelTarget=Math.abs(w.a.x-old.x)<=0.01&&Math.abs(w.a.y-old.y)<=0.01?w.b:w.a
+      }
+      replacements.set(key,{pin:{x,y},label:labelTarget})
     }
   }
   if(!replacements.size)return {content:source,snapped:0}
   const format=(v:number)=>Number(v.toFixed(6)).toString()
-  const move=(x:number,y:number)=>{
-    const target=replacements.get(x.toFixed(5)+","+y.toFixed(5))
-    return target?{x:target.x,y:target.y}:null
-  }
   let content=replaceSexprBlocks(source,"(label",block=>block.replace(/\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/,(all,x,y)=>{
-    const target=move(Number(x),Number(y))
+    const target=replacements.get(Number(x).toFixed(5)+","+Number(y).toFixed(5))?.label
     return target?"(at "+format(target.x)+" "+format(target.y):all
   }))
   content=replaceSexprBlocks(content,"(wire",block=>block.replace(/\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)/g,(all,x,y)=>{
-    const target=move(Number(x),Number(y))
+    const target=replacements.get(Number(x).toFixed(5)+","+Number(y).toFixed(5))?.pin
     return target?"(xy "+format(target.x)+" "+format(target.y)+")":all
   }))
   return {content,snapped:replacements.size}
 }
+
 function snapWireEndsToLabels(source:string,names:Set<string>){
   const labels=sexprBlocks(source,"(label").flatMap(b=>{
     const name=b.text.match(/^\(label\s+"([^"]+)"/)?.[1],at=b.text.match(/\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/)
