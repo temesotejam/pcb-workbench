@@ -16,7 +16,7 @@ jobs:
         with:
           bun-version: '1.3.0'
       - name: Unit tests
-        run: python3 -m unittest discover -s tests -v && python3 -m py_compile scripts/easyeda_native.py
+        run: python3 -m unittest discover -s tests -v && node --test agent/engine.test.mjs && node --check agent/server.mjs && node --check agent/engine.mjs
       - name: Install circuit engine
         run: bun install
       - name: Catalog integrity tests
@@ -34,7 +34,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python3 scripts/fabricate.py dist
       - name: Check browser module syntax
-        run: node --check site/app.js && node --check site/catalog.js
+        run: node --check site/app.js && node --check site/catalog.js && node --check site/handoff-entry.js
       - name: Upload DRAFT outputs and diagnostics
         if: always()
         uses: actions/upload-artifact@v4

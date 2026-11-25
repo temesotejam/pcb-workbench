@@ -1,11 +1,13 @@
 {
   "name": "pcb-workbench",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "bun run scripts/build.tsx",
-    "test": "python3 -m unittest discover -s tests -v"
+    "test": "python3 -m unittest discover -s tests -v",
+    "agent": "node agent/server.mjs",
+    "test:agent": "node --test agent/engine.test.mjs"
   },
   "dependencies": {
     "tscircuit": "0.0.3289",
@@ -14,6 +16,7 @@
     "react": "19.1.0",
     "polygon-clipping": "0.15.7",
     "easyeda": "0.0.392",
-    "fflate": "0.8.2"
+    "fflate": "0.8.2",
+    "esbuild": "0.25.12"
   }
 }
