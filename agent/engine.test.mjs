@@ -76,3 +76,15 @@ test("live project update writes only changed native files and enforces file-set
   await assert.rejects(writeProjectFiles(zipSync({...next,"extra.evar":enc("x")}),active),/file set/)
  }finally{await rm(dir,{recursive:true,force:true})}
 })
+
+test("JLCPCB assembly side policy blocks a connector placed on the wrong board side",()=>{
+ const bom='Quantity,Designator,Comment,Footprint,LCSC Part #,Supplier\r\n1,CN7,Header,2x19,C42372543,LCSC\r\n'
+ const top='Designator,Mid X,Mid Y,Rotation,Layer,SMD\r\nCN7,10,20,90,Top,No\r\n'
+ const bottom=top.replace(",Top,",",Bottom,")
+ const expectedSideByRef={CN7:"Bottom"}
+ const wrong=checkBomCpl(bom,top,{expectedSideByRef})
+ const right=checkBomCpl(bom,bottom,{expectedSideByRef})
+ assert.ok(wrong.blockers.some(x=>x.includes("must be assembled on Bottom side")))
+ assert.equal(right.blockers.length,0)
+ assert.equal(right.cplNormalized[0].Layer,"Bottom")
+})
