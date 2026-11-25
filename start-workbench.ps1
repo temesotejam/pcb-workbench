@@ -14,7 +14,7 @@ if (-not $Cli) {
 }
 if (-not $Cli) {
   Write-Host "EasyEDA Pro desktop client was not found." -ForegroundColor Yellow
-  Write-Host "Install EasyEDA Pro desktop v4.1.70 or newer. The browser/online edition does not expose the required local CLI."
+  Write-Host "Install EasyEDA Pro desktop v4.1.60 or newer. The browser/online edition does not expose the required local CLI."
   Start-Process "https://easyeda.com/page/download"
   exit 1
 }

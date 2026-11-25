@@ -41,5 +41,5 @@
 
 - Loopback-only local web server and EasyEDA Pro desktop CLI session. The browser uploads only the selected native project files to the local agent; it stores a working copy under the configured EasyEDA project root.
 - Official API-backed board enumeration, PCB DRC detailed result + pass gate, schematic DRC per page, Gerber/BOM/CPL/STEP/netlist exports and BOM/CPL reference parity checks. All exports remain REVIEW_ONLY; stock, JLCPCB assembly class, underside/THT fit and final upload preview require manual confirmation.
-- PowerShell launcher checks EasyEDA Pro desktop CLI >=4.1.70 and Node.js >=20. The online edition is not supported for the CLI bridge.
+- PowerShell launcher checks EasyEDA Pro desktop CLI >=4.1.60 and Node.js >=20. The online edition is not supported for the CLI bridge.
 - Remaining: verify on the user's installed EasyEDA Pro runtime (not accessible from this cloud session), test both boards on the real client, confirm JLCPCB upload/preview and physical/electrical checks. Do not claim production release before those gates.

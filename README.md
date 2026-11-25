@@ -27,7 +27,7 @@ See [the parts policy](docs/PARTS.md). Register and verify actual JLCPCB C-numbe
 
 ## Development
 
-The browser is the design workspace. Existing EasyEDA Pro V3 projects require the EasyEDA Pro **desktop** CLI as a local engine (v4.1.70+); the online/browser edition does not expose this session bridge. Run `start-workbench.ps1` on Windows to launch a loopback-only web UI. ChatGPT can prepare native JSON patches from the editable-record export; import them in the browser, then use the local engine to run official ERC/DRC and create a review-only manufacturing package. No CAD GUI operation is needed. GitHub Actions builds and tests the public UI; private design files stay on the user's PC. For optional local development with Bun, Python 3 and KiCad 10:
+The browser is the design workspace. Existing EasyEDA Pro V3 projects require the EasyEDA Pro **desktop** CLI as a local engine (v4.1.60+); the online/browser edition does not expose this session bridge. Run `start-workbench.ps1` on Windows to launch a loopback-only web UI. ChatGPT can prepare native JSON patches from the editable-record export; import them in the browser, then use the local engine to run official ERC/DRC and create a review-only manufacturing package. No CAD GUI operation is needed. GitHub Actions builds and tests the public UI; private design files stay on the user's PC. For optional local development with Bun, Python 3 and KiCad 10:
 
 ```sh
 bun install
