@@ -64,6 +64,60 @@ function nativePanel(p){
  inspectButton.onclick=async()=>{try{download(JSON.stringify(await inspectSource(nativeSource(entries,board)),null,2),board.key+'-editable-records.json')}catch(e){status.textContent=e.message}}
  const lbl=add(p,'p','AI差分JSONを選択'),file=add(lbl,'input');file.type='file';file.accept='.json,application/json'
  const status=add(p,'p','原本は未変更です。')
+ const editor=add(p,'section','')
+ add(editor,'h3','部品の位置・角度を編集')
+ add(editor,'p','PCBネイティブ座標（mil）で部品のX/Y位置と回転角を変更します。配線は自動追従しません。変更後はEasyEDAで配線・クリアランスを確認し、ERC/DRCを再実行してください。')
+ const editRow=add(editor,'p','')
+ const partSelect=add(editRow,'select','')
+ const refresh=add(editRow,'button','部品一覧を読み込む')
+ const fields=add(editor,'div','')
+ const xInput=add(fields,'label','X (mil) '),xField=add(xInput,'input');xField.type='number';xField.step='1'
+ const yInput=add(fields,'label','Y (mil) '),yField=add(yInput,'input');yField.type='number';yField.step='1'
+ const angleInput=add(fields,'label','Rotation (deg) '),angleField=add(angleInput,'input');angleField.type='number';angleField.step='1'
+ const applyPosition=add(editor,'button','位置・角度の変更を適用')
+ let pcbComponents=[]
+ const loadEditableComponents=async()=>{
+  refresh.disabled=true
+  try{
+   const inspection=await inspectSource(nativeSource(entries,board))
+   pcbComponents=inspection.documents.filter(x=>x.docType==='PCB'&&x.recordType==='COMPONENT'&&x.designator&&['x','y','angle'].every(k=>Number.isFinite(x.fields[k])))
+   const counts=new Map()
+   for(const item of pcbComponents)counts.set(item.designator,(counts.get(item.designator)||0)+1)
+   pcbComponents=pcbComponents.filter(item=>counts.get(item.designator)===1)
+   partSelect.replaceChildren()
+   for(const item of pcbComponents){const o=add(partSelect,'option',item.designator+' · X '+item.fields.x+' / Y '+item.fields.y+' / '+item.fields.angle+'°');o.value=item.recordId}
+   if(!pcbComponents.length)throw new Error('一意に識別できるPCB部品レコードがありません')
+   const first=pcbComponents[0];xField.value=first.fields.x;yField.value=first.fields.y;angleField.value=first.fields.angle
+   status.textContent=pcbComponents.length+'個の部品を編集対象として読み込みました。'
+  }catch(e){status.textContent='部品一覧の読み込み失敗: '+e.message}
+  finally{refresh.disabled=false}
+ }
+ partSelect.onchange=()=>{
+  const item=pcbComponents.find(x=>x.recordId===partSelect.value)
+  if(!item)return
+  xField.value=item.fields.x;yField.value=item.fields.y;angleField.value=item.fields.angle
+ }
+ refresh.onclick=loadEditableComponents
+ applyPosition.onclick=async()=>{
+  applyPosition.disabled=true
+  try{
+   const item=pcbComponents.find(x=>x.recordId===partSelect.value)
+   if(!item)throw new Error('編集する部品を選択してください')
+   const values={x:Number(xField.value),y:Number(yField.value),angle:Number(angleField.value)}
+   if(!Object.values(values).every(Number.isFinite))throw new Error('X/Y/角度には有限の数値を入力してください')
+   if(Math.abs(values.angle)>3600)throw new Error('回転角は±3600°以内にしてください')
+   const set={},expect={}
+   for(const key of ['x','y','angle'])if(values[key]!==item.fields[key]){set[key]=values[key];expect[key]=item.fields[key]}
+   if(!Object.keys(set).length){status.textContent='変更はありません。';return}
+   if(!confirm(item.designator+' の位置・角度を変更します。\\nX: '+item.fields.x+' → '+values.x+' mil\\nY: '+item.fields.y+' → '+values.y+' mil\\n角度: '+item.fields.angle+' → '+values.angle+'°\\n\\n配線は自動修正されません。続行しますか？'))return
+   const patch={schema:'pcb-workbench-native-patch/v1',changes:[{path:item.path,baseSha256:item.baseSha256,docType:item.docType,docUuid:item.docUuid,recordType:item.recordType,recordId:item.recordId,expect,set}]}
+   const result=await applyPatchText(JSON.stringify(patch))
+   const rv=result.updateResult?.runtimeVerification
+   status.textContent=result.liveApplied?(rv?.passed?'位置・角度をEasyEDAへ反映し、再読込を確認しました。配線とERC/DRCを確認してください。':'書込み後の再読込確認が未完了です。製造データには使用しないでください。'):'変更済みZIPを出力しました。EasyEDAへ読み込み、配線とERC/DRCを確認してください。'
+   pcbComponents=[]
+  }catch(e){status.textContent='編集を中止しました: '+e.message}
+  finally{applyPosition.disabled=false}
+ }
  if(board.nativeBoardName==="NUCLEO-F401RE Rev1.5"){
   const underside=add(p,'button','CN7 / CN10 を裏面へ移動（確認付き）')
   underside.onclick=async()=>{
