@@ -67,7 +67,7 @@ test('via net assignment is editable but rejects empty or multiline names',async
  expect(records(result.source['pcb/board.epcb2']).items.find(x=>x.h.id==='via').v.netName).toBe('3V3')
  p.changes[0].set.netName=''
  await expect(applyPatch(pcb,p)).rejects.toThrow('Invalid net name')
- p.changes[0].set.netName='BAD\\nNET'
+ p.changes[0].set.netName='BAD\nNET'
  await expect(applyPatch(pcb,p)).rejects.toThrow('Invalid net name')
 })
 
