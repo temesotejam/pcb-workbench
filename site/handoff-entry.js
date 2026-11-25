@@ -254,7 +254,7 @@ function nativePanel(p){
   for(const key of Object.keys(trackInputs))trackInputs[key].value=item.fields[key]
  }
  routeRefresh.onclick=loadRouteRecords
- const netRow=add(routeEditor,'p',''),netLabel=add(netRow,'label','Track net name '),trackNet=add(netLabel,'input');trackNet.type='text';trackNet.maxLength=256
+ const netRow=add(routeEditor,'p',''),netLabel=add(netRow,'label','Track net name '),trackNet=add(netLabel,'select');for(const n of board.nets){const o=add(trackNet,'option',n.Net);o.value=n.Net}
  const netApply=add(routeEditor,'button','選択トラックのネット名を変更')
  routeSelect.addEventListener('change',()=>{const item=routeRecords.find(x=>x.recordId+'|'+x.path===routeSelect.value);if(item)trackNet.value=item.fields.netName??item.net??''})
  netApply.onclick=async()=>{
@@ -326,7 +326,7 @@ function nativePanel(p){
   for(const key of Object.keys(viaInputs))viaInputs[key].value=item.fields[key]
  }
  viaRefresh.onclick=loadViaRecords
- const viaNetRow=add(viaEditor,'p',''),viaNetLabel=add(viaNetRow,'label','Via net name '),viaNet=add(viaNetLabel,'input');viaNet.type='text';viaNet.maxLength=256
+ const viaNetRow=add(viaEditor,'p',''),viaNetLabel=add(viaNetRow,'label','Via net name '),viaNet=add(viaNetLabel,'select');for(const n of board.nets){const o=add(viaNet,'option',n.Net);o.value=n.Net}
  const viaNetApply=add(viaEditor,'button','選択ビアのネット名を変更')
  viaSelect.addEventListener('change',()=>{const item=viaRecords.find(x=>x.recordId+'|'+x.path===viaSelect.value);if(item)viaNet.value=item.fields.netName??item.net??''})
  viaNetApply.onclick=async()=>{
