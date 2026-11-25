@@ -7,6 +7,10 @@ import { createHash } from "node:crypto"
 import { zipSync } from "fflate"
 import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles, expectedAssemblySideProfile, classifyDrcItems, nativeDocumentCounts, buildJlcpcbReviewBundle } from "./bridge.mjs"
 
+test("Assembly-side profile falls back to native board name when project name is generic",()=>{
+ assert.deepEqual(expectedAssemblySideProfile("NUCLEO Project","NUCLEO-F401RE Rev1.5"),{CN7:"Bottom",CN10:"Bottom"})
+ assert.deepEqual(expectedAssemblySideProfile("NUCLEO Project","Lower GPIO Proto R1"),{CN7:"Top",CN10:"Top"})
+})
 test("Bridge response envelopes unwrap values and reject failures",()=>{
  assert.deepEqual(parseBridgeEnvelope({success:true,result:{ok:1}}),{ok:1})
  assert.deepEqual(parseBridgeEnvelope({ok:true,value:[1,2]}),[1,2])
