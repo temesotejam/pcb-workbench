@@ -54,5 +54,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pcb-workbench-DRAFT-DO-NOT-ORDER
-          path: dist/projects/*/draft/
+          path: |
+            dist/projects/*/draft/
+            dist/projects/*/validation.json
           if-no-files-found: warn
