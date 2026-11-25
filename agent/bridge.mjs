@@ -70,13 +70,16 @@ export async function bridgeVerifyBoard(port,windowId,boardName){
  "const args="+JSON.stringify({boardName})+";",
  "const boards=await eda.dmt_Board.getAllBoardsInfo();const b=boards.find(x=>x.name===args.boardName);",
  "if(!b||!b.pcb?.uuid)throw new Error('Board or PCB UUID not found: '+args.boardName);",
+ "const classify=(items,key)=>{const errors=[],warnings=[],unknown=[];for(const v of Array.isArray(items)?items:[]){const level=String(v?.[key]??v?.type??v?.errorType??'').toLowerCase();if(level==='error'||level==='fatalerror')errors.push(v);else if(level==='warn'||level==='warning')warnings.push(v);else if(level==='info'){}else unknown.push(v);}return {errors,warnings,unknown};};",
  "const pcbTab=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(!pcbTab)throw new Error('Could not open PCB document');",
  "await eda.pcb_Document.save();await new Promise(r=>setTimeout(r,8000));",
- "let pcbVerbose=null,pcbVerboseError=null;try{pcbVerbose=await eda.pcb_Drc.check(true,false,true);}catch(e){pcbVerboseError=String(e);}",
- "const pcbPassed=await eda.pcb_Drc.check(true,false,false);",
+ "let pcbVerbose=null,pcbVerboseError=null,pcbDetailAvailable=false;try{pcbVerbose=await eda.pcb_Drc.check(true,false,true);pcbDetailAvailable=Array.isArray(pcbVerbose);}catch(e){pcbVerboseError=String(e);}",
+ "let pcbStrict=false;try{pcbStrict=await eda.pcb_Drc.check(true,false,false)===true;}catch(e){if(!pcbVerboseError)pcbVerboseError=String(e);}",
+ "const pcbClass=classify(pcbVerbose,'errorType');const pcbPassed=pcbDetailAvailable?(pcbClass.errors.length===0&&pcbClass.unknown.length===0):pcbStrict;",
  "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo();const target=pages.filter(p=>p.parentSchematicUuid===b.schematic?.uuid);const schematic=[];",
- "for(const page of target){const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:'Could not open page'});continue;}await eda.sch_Document.save();await new Promise(r=>setTimeout(r,8000));let verbose=null,verboseError=null;try{verbose=await eda.sch_Drc.check(true,false,true);}catch(e){verboseError=String(e);}try{const passed=await eda.sch_Drc.check(true,false,false);schematic.push({name:page.name,uuid:page.uuid,passed:passed===true,verbose,verboseError});}catch(e){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:String(e),verbose,verboseError});}}",
- "return {board:{name:b.name,uuid:b.uuid,pcbUuid:b.pcb.uuid,schematicUuid:b.schematic?.uuid??null},pcb:{passed:pcbPassed===true,booleanResult:pcbPassed,verbose,verboseError},schematics:schematic,schematicPassed:target.length>0&&schematic.length===target.length&&schematic.every(x=>x.passed),checkedAt:new Date().toISOString(),engineVersion:eda.sys_Environment.getEditorCurrentVersion()};"
+ "for(const page of target){const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){schematic.push({name:page.name,uuid:page.uuid,passed:false,detailAvailable:false,error:'Could not open page'});continue;}await eda.sch_Document.save();await new Promise(r=>setTimeout(r,8000));let verbose=null,verboseError=null,detailAvailable=false;try{verbose=await eda.sch_Drc.check(true,false,true);detailAvailable=Array.isArray(verbose);}catch(e){verboseError=String(e);}let strictPassed=false;try{strictPassed=await eda.sch_Drc.check(true,false,false)===true;}catch(e){if(!verboseError)verboseError=String(e);}const cls=classify(verbose,'type');const passed=detailAvailable?(cls.errors.length===0&&cls.unknown.length===0):strictPassed;schematic.push({name:page.name,uuid:page.uuid,passed,strictPassed,detailAvailable,errors:cls.errors,warnings:cls.warnings,unknown:cls.unknown,verboseError});}",
+ "const errorCount=pcbClass.errors.length+pcbClass.unknown.length+schematic.reduce((n,x)=>n+x.errors.length+x.unknown.length,0);const warningCount=pcbClass.warnings.length+schematic.reduce((n,x)=>n+x.warnings.length,0);",
+ "return {board:{name:b.name,uuid:b.uuid,pcbUuid:b.pcb.uuid,schematicUuid:b.schematic?.uuid??null},pcb:{passed:pcbPassed,strictPassed:pcbStrict,detailAvailable:pcbDetailAvailable,errors:pcbClass.errors,warnings:pcbClass.warnings,unknown:pcbClass.unknown,verboseError:pcbVerboseError},schematics:schematic,schematicPassed:target.length>0&&schematic.length===target.length&&schematic.every(x=>x.passed),errorCount,warningCount,checkedAt:new Date().toISOString(),engineVersion:eda.sys_Environment.getEditorCurrentVersion()};"
  ].join("\n")
  return await bridgeExecute(port,windowId,code,120000)
 }
@@ -108,8 +111,10 @@ export async function bridgeExportBoard(port,windowId,boardName){
  }
  for(const required of ["Gerber.zip","BOM.csv","CPL.csv"])if(!files[required])throw new Error("Required native export missing: "+required)
  const blockers=[],warnings=[]
- if(!verification.pcb?.passed)blockers.push("Fresh PCB DRC did not pass.")
- if(!verification.schematicPassed)blockers.push("One or more schematic DRC checks did not pass.")
+ if(!verification.pcb?.passed)blockers.push("PCB DRC contains errors, unknown violations or an unavailable detailed result.")
+ if(!verification.schematicPassed)blockers.push("Schematic ERC/DRC contains errors, unknown violations or an unavailable detailed result.")
+ for(const item of verification.pcb?.warnings??[])warnings.push("PCB warning: "+(item.ruleName??item.rule??item.explanation??JSON.stringify(item)))
+ for(const page of verification.schematics??[])for(const item of page.warnings??[])warnings.push("Schematic "+page.name+" warning: "+(item.rule??item.type??item.message??JSON.stringify(item)))
  const parity=checkBomCpl(new TextDecoder().decode(files["BOM.csv"]),new TextDecoder().decode(files["CPL.csv"]))
  blockers.push(...parity.blockers);warnings.push(...parity.warnings)
  files["BOM.csv"]=new TextEncoder().encode(csvString(["Comment","Designator","Footprint","LCSC Part #","Quantity"],parity.bomNormalized))
