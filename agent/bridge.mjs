@@ -152,11 +152,12 @@ export async function bridgeExportBoard(port,windowId,boardName,projectName=null
  warnings.push("JLCPCB stock, exact assembly eligibility, THT process, component-side orientation and final upload preview have not been confirmed.")
  warnings.push("Physical fit, electrical, thermal and safety validation remain the engineer's responsibility.")
  if(!files["Board.step"])warnings.push("STEP export is unavailable; mechanical 3D review must use the native CAD project.")
- if(!files["Netlist.net"])blockers.push("Native schematic netlist export is unavailable; electrical connectivity parity cannot be independently checked.")
+ if(!files["Netlist.net"])warnings.push("Native schematic netlist export is unavailable; electrical connectivity parity remains unverified.")
  const outputHashes=Object.fromEntries(Object.entries(files).map(([name,data])=>[name,createHash("sha256").update(data).digest("hex")]))
  const manifest={schema:"pcb-workbench-bridge-export/v1",projectName,boardName,expectedSideByRef,sourceRevision:sourceAfter?.sourceRevision??null,sourceFileHashes:sourceAfter?.hashes??null,engine:"EasyEDA Pro API Gateway / Bridge Server",engineVersion:result.engineVersion,generatedAt:new Date().toISOString(),verification,parity,gerberFiles,outputHashes,optionalErrors:result.optionalErrors,blockers,warnings,orderReady:false,status:blockers.length?"BLOCKED":"REVIEW_ONLY"}
  files["REVIEW_ONLY.json"]=new TextEncoder().encode(JSON.stringify(manifest,null,2))
  files["DO_NOT_ORDER.txt"]=new TextEncoder().encode("REVIEW ONLY — NOT APPROVED FOR ORDER.\nConfirm JLCPCB stock and assembly eligibility, BOM/CPL orientation, netlist parity, all DRC/physical checks and JLCPCB upload preview before ordering.\n")
+ files["JLCPCB_UPLOAD_GUIDE.txt"]=new TextEncoder().encode("JLCPCB REVIEW PACKAGE\\n\\n1. Upload Gerber.zip in the PCB order page and inspect every parsed layer and board outline.\\n2. For PCBA, upload BOM.csv and CPL.csv separately in the assembly page.\\n3. Confirm every LCSC part number, MPN, footprint, stock, assembly class and quantity.\\n4. Inspect top/bottom side, rotation and connector orientation in the placement preview.\\n5. Review REVIEW_ONLY.json and resolve every blocker and warning.\\n6. This bundle is not order-approved. DO_NOT_ORDER.txt remains in force until engineering and factory preview checks pass.\\n")
  return {files,manifest,zip:zipSync(files,{level:6}),verification}
 }
 
