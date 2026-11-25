@@ -24,10 +24,7 @@ function sexprBlocks(source:string, token:string):SExprBlock[] {
       }
       if(c==='"'){inString=true;continue}
       if(c==="(")depth++
-      else if(c===")"){
-        depth--
-        if(depth===0){end=i+1;break}
-      }
+      else if(c===")"){depth--;if(depth===0){end=i+1;break}}
     }
     if(end<0)throw new Error("Unbalanced KiCad S-expression starting at "+start)
     blocks.push({start,end,text:source.slice(start,end)})
@@ -36,16 +33,35 @@ function sexprBlocks(source:string, token:string):SExprBlock[] {
   return blocks
 }
 function replaceSexprBlocks(source:string,token:string,transform:(block:string)=>string):string{
-  const blocks=sexprBlocks(source,token)
-  for(const b of blocks.reverse())source=source.slice(0,b.start)+transform(b.text)+source.slice(b.end)
+  for(const b of sexprBlocks(source,token).reverse())source=source.slice(0,b.start)+transform(b.text)+source.slice(b.end)
   return source
 }
 function quoteKicad(s:string){return s.replace(/\\/g,"\\\\").replace(/"/g,'\\"')}
-function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pcbText:string){
-  const footprintByRef=new Map<string,string>(),descriptionByRef=new Map<string,string>(),libraryFiles=new Map<string,string>()
+function snapWireEndsToLabels(source:string,names:Set<string>){
+  const labels=sexprBlocks(source,"(label").flatMap(b=>{
+    const name=b.text.match(/^\(label\s+"([^"]+)"/)?.[1],at=b.text.match(/\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/)
+    return name&&names.has(name)&&at?[{name,x:Number(at[1]),y:Number(at[2])}]:[]
+  })
+  let snapped=0
+  const content=replaceSexprBlocks(source,"(wire",block=>{
+    const points=[...block.matchAll(/\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)/g)]
+    let updated=block
+    for(const p of points){
+      const x=Number(p[1]),y=Number(p[2])
+      const candidates=labels.filter(l=>{
+        const dx=Math.abs(l.x-x),dy=Math.abs(l.y-y)
+        return (dx<=0.01&&Math.abs(dy-2.54)<=0.01)||(dy<=0.01&&Math.abs(dx-2.54)<=0.01)
+      })
+      if(candidates.length===1){updated=updated.replace(p[0],"(xy "+candidates[0].x+" "+candidates[0].y+")");snapped++}
+    }
+    return updated
+  })
+  return {content,snapped}
+}
+function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pcbText:string,netNames:string[]){
+  const footprintByRef=new Map<string,string>(),descriptionByRef=new Map<string,string>(),footprintLibraryFiles=new Map<string,string>(),symbolIdMap=new Map<string,string>(),symbolLibraryFiles=new Map<string,string>()
   for(const block of sexprBlocks(pcbText,"(footprint")){
-    const fullName=block.text.match(/^\(footprint\s+"([^"]+)"/)?.[1]
-    const ref=block.text.match(/\(property "Reference" "([^"]+)"/)?.[1]
+    const fullName=block.text.match(/^\(footprint\s+"([^"]+)"/)?.[1],ref=block.text.match(/\(property "Reference" "([^"]+)"/)?.[1]
     if(!fullName||!ref)continue
     footprintByRef.set(ref,fullName)
     const split=fullName.indexOf(":")
@@ -58,11 +74,27 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
     snapshot=snapshot.replace(/\(property "Reference" "[^"]*"/,'(property "Reference" "REF**"')
     snapshot=snapshot.replace(/\(property "Value" "[^"]*"/,'(property "Value" "'+quoteKicad(item)+'"')
     snapshot=snapshot.replace(/\(property "Supplier Part Number" "[^"]*"/g,'(property "Supplier Part Number" ""')
-    const key=lib+"/"+item,prior=libraryFiles.get(key)
+    snapshot=replaceSexprBlocks(snapshot,"(model",()=> "")
+    const key=lib+"/"+item,prior=footprintLibraryFiles.get(key)
     if(prior&&prior!==snapshot)throw new Error("Same KiCad footprint ID has different geometry: "+key)
-    libraryFiles.set(key,snapshot)
+    footprintLibraryFiles.set(key,snapshot)
   }
   for(const file of schematicFiles){
+    for(const libBlock of sexprBlocks(file.content,"(lib_symbols")){
+      for(const symbolBlock of sexprBlocks(libBlock.text,"(symbol")){
+        const fullName=symbolBlock.text.match(/^\(symbol\s+"([^"]+)"/)?.[1]
+        if(!fullName)continue
+        const split=fullName.indexOf(":")
+        if(split<1)continue
+        const originalLib=fullName.slice(0,split),item=fullName.slice(split+1)
+        const libraryItem=originalLib+"__"+item,newId="tscircuit:"+libraryItem
+        symbolIdMap.set(fullName,newId)
+        const snapshot=symbolBlock.text.replace(/^\(symbol\s+"[^"]+"/,'(symbol "'+quoteKicad(libraryItem)+'"')
+        const prior=symbolLibraryFiles.get(libraryItem)
+        if(prior&&prior!==snapshot)throw new Error("Duplicate custom symbol has different definition: "+libraryItem)
+        symbolLibraryFiles.set(libraryItem,snapshot)
+      }
+    }
     for(const block of sexprBlocks(file.content,"(symbol")){
       const ref=block.text.match(/\(property "Reference" "([^"]+)"/)?.[1]
       if(!ref||!footprintByRef.has(ref))continue
@@ -70,108 +102,91 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
       if(desc)descriptionByRef.set(ref,desc)
     }
   }
-  const patchedSchematics=schematicFiles.map(file=>({
-    ...file,
-    content:replaceSexprBlocks(file.content,"(symbol",block=>{
-      const ref=block.match(/\(property "Reference" "([^"]+)"/)?.[1]
-      const footprint=ref?footprintByRef.get(ref):undefined
+  let patchedSchematics=schematicFiles.map(file=>{
+    let content=file.content
+    for(const [oldId,newId] of symbolIdMap)content=content.replaceAll('"'+oldId+'"','"'+newId+'"')
+    content=replaceSexprBlocks(content,"(symbol",block=>{
+      const ref=block.match(/\(property "Reference" "([^"]+)"/)?.[1],footprint=ref?footprintByRef.get(ref):undefined
       if(!footprint)return block
       return block.replace(/\(property "Footprint" ""/,'(property "Footprint" "'+quoteKicad(footprint)+'"')
     })
-  }))
+    content=snapWireEndsToLabels(content,new Set(netNames)).content
+    return {...file,content}
+  })
   const patchedPcb=replaceSexprBlocks(pcbText,"(footprint",block=>{
-    const ref=block.match(/\(property "Reference" "([^"]+)"/)?.[1]
-    const description=ref?descriptionByRef.get(ref):undefined
+    const ref=block.match(/\(property "Reference" "([^"]+)"/)?.[1],description=ref?descriptionByRef.get(ref):undefined
     if(!description)return block
     return block.replace(/\(property "Description" ""/,'(property "Description" "'+quoteKicad(description)+'"')
-  })
-  const symbolLibraries=new Set<string>()
-  for(const file of patchedSchematics){
-    for(const match of file.content.matchAll(/\(lib_id "([^"]+)"/g)){
-      const full=match[1],split=full.indexOf(":")
-      if(split>0)symbolLibraries.add(full.slice(0,split))
-    }
+  }).replace(/(\(net\s+\d+\s+)"([^"]+)"/g,(all,prefix,name)=>netNames.includes(name)?prefix+'"/'+name+'"':all)
+  for(const [ref,fullName] of footprintByRef){
+    const description=descriptionByRef.get(ref)
+    if(!description)continue
+    const split=fullName.indexOf(":"),key=fullName.slice(0,split)+"/"+fullName.slice(split+1),snapshot=footprintLibraryFiles.get(key)
+    if(snapshot)footprintLibraryFiles.set(key,snapshot.replace(/\(property "Description" ""/,'(property "Description" "'+quoteKicad(description)+'"'))
   }
-  const symbolPrefix='$'+'{KICAD_SYMBOL_DIR}/'
-  const projectPrefix='$'+'{KIPRJMOD}/'
-  const symTable='(sym_lib_table\n'+[...symbolLibraries].sort().map(lib=>'  (lib (name "'+quoteKicad(lib)+'") (type "KiCad") (uri "'+symbolPrefix+quoteKicad(lib)+'.kicad_sym") (options "") (descr ""))').join("\n")+'\n)\n'
-  const fpLibraries=[...new Set([...libraryFiles.keys()].map(k=>k.split("/")[0]))]
-  const fpTable='(fp_lib_table\n'+fpLibraries.sort().map(lib=>'  (lib (name "'+quoteKicad(lib)+'") (type "KiCad") (uri "'+projectPrefix+quoteKicad(lib)+'.pretty") (options "") (descr "Resolved component geometry"))').join("\n")+'\n)\n'
-  return {schematicFiles:patchedSchematics,pcbText:patchedPcb,libraryFiles,symTable,fpTable}
+  const symHeader='(kicad_symbol_lib\n  (version 20231120)\n  (generator "kicad_symbol_editor")\n'
+  const symFile=symHeader+[...symbolLibraryFiles.values()].join("\n")+"\n)\n"
+  const projectPrefix="$"+"{KIPRJMOD}/"
+  const symTable='(sym_lib_table\n  (lib (name "tscircuit") (type "KiCad") (uri "'+projectPrefix+'tscircuit.kicad_sym") (options "") (descr "Generated source symbols"))\n)\n'
+  const fpTable='(fp_lib_table\n  (lib (name "tscircuit") (type "KiCad") (uri "'+projectPrefix+'tscircuit.pretty") (options "") (descr "Exact imported component geometry"))\n)\n'
+  return {schematicFiles:patchedSchematics,pcbText:patchedPcb,footprintLibraryFiles,symFile,symTable,fpTable}
 }
 
-const root = resolve(import.meta.dir, "..")
-const out = resolve(root, "dist")
-await rm(out, { recursive: true, force: true })
-await mkdir(out, { recursive: true })
-await cp(resolve(root, "site"), out, { recursive: true })
-const handoff = await Bun.build({entrypoints:[resolve(root,"site/handoff-entry.js")],target:"browser",outdir:out,naming:"handoff.js",minify:true})
-if(!handoff.success) throw new Error(handoff.logs.map(String).join("\n"))
+const root=resolve(import.meta.dir,"..")
+const out=resolve(root,"dist")
+await rm(out,{recursive:true,force:true})
+await mkdir(out,{recursive:true})
+await cp(resolve(root,"site"),out,{recursive:true})
+const handoff=await Bun.build({entrypoints:[resolve(root,"site/handoff-entry.js")],target:"browser",outdir:out,naming:"handoff.js",minify:true})
+if(!handoff.success)throw new Error(handoff.logs.map(String).join("\n"))
 await rm(resolve(out,"handoff-entry.js"))
-await cp(resolve(root, "library", "catalog.json"), resolve(out,"catalog.json"))
-const index = []
-let failed = false
-for (const id of (await readdir(resolve(root, "projects"))).sort()) {
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) throw new Error("Invalid project slug: " + id)
-  const dir = resolve(root, "projects", id)
-  const meta = JSON.parse(await readFile(resolve(dir, "project.json"), "utf8"))
-  if (meta.id !== id) throw new Error("Project id mismatch: " + id)
-  const path = resolve(out, "projects", id)
-  await mkdir(path, { recursive: true })
-  const result = {id, name: meta.name, revision: meta.revision, purpose: meta.purpose, status:"blocked", parts:[] as ReturnType<typeof resolveParts>, errors: [] as string[], files: [] as string[]}
-  try {
-    result.parts = resolveParts(meta.parts)
-    const Design = (await import(resolve(dir, "design.tsx"))).default
-    const circuit = new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})
+await cp(resolve(root,"library","catalog.json"),resolve(out,"catalog.json"))
+const index=[]
+let failed=false
+for(const id of (await readdir(resolve(root,"projects"))).sort()){
+  if(!/^[a-z0-9][a-z0-9-]*$/.test(id))throw new Error("Invalid project slug: "+id)
+  const dir=resolve(root,"projects",id)
+  const meta=JSON.parse(await readFile(resolve(dir,"project.json"),"utf8"))
+  if(meta.id!==id)throw new Error("Project id mismatch: "+id)
+  const path=resolve(out,"projects",id)
+  await mkdir(path,{recursive:true})
+  const result={id,name:meta.name,revision:meta.revision,purpose:meta.purpose,status:"blocked",parts:[] as ReturnType<typeof resolveParts>,errors:[] as string[],files:[] as string[]}
+  try{
+    result.parts=resolveParts(meta.parts)
+    const Design=(await import(resolve(dir,"design.tsx"))).default
+    const circuit=new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})
     circuit.add(<Design />)
     await circuit.renderUntilSettled()
-    const json = circuit.getCircuitJson()
+    const json=circuit.getCircuitJson()
     const namedNets=json.filter((x:any)=>x.type==="source_net").map((x:any)=>x.name)
     for(const expected of ["R1_R2_PIN1","R1_R2_PIN2"])if(!namedNets.includes(expected))throw new Error("Named net missing from Circuit JSON: "+expected)
-    await writeFile(resolve(path,"circuit.json"),JSON.stringify(json,null,2))
-    result.files.push("circuit.json")
+    await writeFile(resolve(path,"circuit.json"),JSON.stringify(json,null,2));result.files.push("circuit.json")
     assertSourceParity(json,result.parts)
     await writeFile(resolve(path,"schematic.svg"),convertCircuitJsonToSchematicSvg(json))
-    await writeFile(resolve(path,"pcb.svg"),convertCircuitJsonToPcbSvg(json))
-    result.files.push("schematic.svg","pcb.svg")
-    const sch = new CircuitJsonToKicadSchConverter(json)
-    sch.runUntilFinished()
-    const schFiles=sch.getOutputFiles({schematicFilename:"board.kicad_sch"})
-      .filter((f:any)=>/^[a-zA-Z0-9_. -]+\.kicad_sch$/.test(f.filename))
-      .map((f:any)=>({filename:f.filename,content:f.content}))
-    const pcb = new CircuitJsonToKicadPcbConverter(json)
-    pcb.runUntilFinished()
-    const pcbText=pcb.getOutputString()
-    const prepared=prepareKicadParity(schFiles,pcbText)
-    for(const f of prepared.schematicFiles){
-      await writeFile(resolve(path,f.filename),f.content)
-      result.files.push(f.filename)
-    }
+    await writeFile(resolve(path,"pcb.svg"),convertCircuitJsonToPcbSvg(json));result.files.push("schematic.svg","pcb.svg")
+    const sch=new CircuitJsonToKicadSchConverter(json);sch.runUntilFinished()
+    const schFiles=sch.getOutputFiles({schematicFilename:"board.kicad_sch"}).filter((f:any)=>/^[a-zA-Z0-9_. -]+\.kicad_sch$/.test(f.filename)).map((f:any)=>({filename:f.filename,content:f.content}))
+    const pcb=new CircuitJsonToKicadPcbConverter(json);pcb.runUntilFinished()
+    const prepared=prepareKicadParity(schFiles,pcb.getOutputString(),namedNets)
+    for(const f of prepared.schematicFiles){await writeFile(resolve(path,f.filename),f.content);result.files.push(f.filename)}
     await writeFile(resolve(path,"board.kicad_pcb"),prepared.pcbText)
-    const pro = new CircuitJsonToKicadProConverter(json,{projectName:"board",schematicFilename:"board.kicad_sch",pcbFilename:"board.kicad_pcb"})
-    pro.runUntilFinished()
+    const pro=new CircuitJsonToKicadProConverter(json,{projectName:"board",schematicFilename:"board.kicad_sch",pcbFilename:"board.kicad_pcb"});pro.runUntilFinished()
     await writeFile(resolve(path,"board.kicad_pro"),pro.getOutputString())
     const prettyByLib=new Map<string,string[]>()
-    for(const [key,content] of prepared.libraryFiles){
-      const [lib,item]=key.split("/")
-      const libDir=resolve(path,lib+".pretty")
-      await mkdir(libDir,{recursive:true})
-      await writeFile(resolve(libDir,item+".kicad_mod"),content)
+    for(const [key,content] of prepared.footprintLibraryFiles){
+      const [lib,item]=key.split("/"),libDir=resolve(path,lib+".pretty")
+      await mkdir(libDir,{recursive:true});await writeFile(resolve(libDir,item+".kicad_mod"),content)
       prettyByLib.set(lib,[...(prettyByLib.get(lib)??[]),item+".kicad_mod"])
     }
+    await writeFile(resolve(path,"tscircuit.kicad_sym"),prepared.symFile)
     await writeFile(resolve(path,"sym-lib-table"),prepared.symTable)
     await writeFile(resolve(path,"fp-lib-table"),prepared.fpTable)
-    result.files.push("board.kicad_pcb","board.kicad_pro","sym-lib-table","fp-lib-table",...([...prettyByLib].flatMap(([lib,files])=>files.map(f=>lib+".pretty/"+f))))
-    const errors = json.filter((e:any) => typeof e.type === "string" && e.type.endsWith("_error"))
-    result.errors = errors.map((e:any) => JSON.stringify(e))
-    result.status = "preview"
-  } catch(e) {
-    failed = true
-    result.errors.push(String(e))
-    console.error(id,e)
-  }
+    result.files.push("board.kicad_pcb","board.kicad_pro","tscircuit.kicad_sym","sym-lib-table","fp-lib-table",...([...prettyByLib].flatMap(([lib,files])=>files.map(f=>lib+".pretty/"+f))))
+    const errors=json.filter((e:any)=>typeof e.type==="string"&&e.type.endsWith("_error"))
+    result.errors=errors.map((e:any)=>JSON.stringify(e));result.status="preview"
+  }catch(e){failed=true;result.errors.push(String(e));console.error(id,e)}
   await writeFile(resolve(path,"project.json"),JSON.stringify(result,null,2))
   index.push({id,name:meta.name,revision:meta.revision})
 }
 await writeFile(resolve(out,"projects.json"),JSON.stringify(index,null,2))
-if(failed) process.exitCode = 1
+if(failed)process.exitCode=1
