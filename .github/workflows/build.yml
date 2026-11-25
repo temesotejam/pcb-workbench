@@ -2,7 +2,13 @@ name: Build and verify PCB Workbench
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
   pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
   workflow_dispatch:
 permissions:
   contents: read
