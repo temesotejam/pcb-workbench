@@ -5,7 +5,7 @@ import os from "node:os"
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { zipSync } from "fflate"
-import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles, expectedAssemblySideProfile, classifyDrcItems } from "./bridge.mjs"
+import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles, expectedAssemblySideProfile, classifyDrcItems, nativeDocumentCounts } from "./bridge.mjs"
 
 test("Bridge response envelopes unwrap values and reject failures",()=>{
  assert.deepEqual(parseBridgeEnvelope({success:true,result:{ok:1}}),{ok:1})
@@ -101,4 +101,28 @@ test("Unknown PCB DRC errorType is conservatively blocking, never silently treat
 test("Empty detailed DRC array means no violations; missing details are unknown",()=>{
  assert.deepEqual(classifyDrcItems([]),{errors:[],warnings:[],unknown:[],info:[]})
  assert.equal(classifyDrcItems(null).unknown.length,1)
+})
+
+test("Native source document counts match PCB and schematic primitive records",()=>{
+ const doc=(type,uuid)=>JSON.stringify({type:"DOCHEAD",id:"head"})+"||"+JSON.stringify({docType:type,uuid})+"\n"
+ const rec=(type,id)=>JSON.stringify({type,id})+"||"+JSON.stringify({sample:true})+"\n"
+ const counts=nativeDocumentCounts({
+  "pcb/Board.epcb2":new TextEncoder().encode(doc("PCB","pcb-1")+rec("COMPONENT","c1")+rec("COMPONENT","c2")+rec("LINE","l1")),
+  "sch/Page.esch2":new TextEncoder().encode(doc("SCH_PAGE","sch-1")+rec("COMPONENT","s1")+rec("COMPONENT","s2")+rec("WIRE","w1"))
+ })
+ assert.deepEqual(counts,[
+  {file:"pcb/Board.epcb2",docType:"PCB",uuid:"pcb-1",componentCount:2,wireCount:0},
+  {file:"sch/Page.esch2",docType:"SCH_PAGE",uuid:"sch-1",componentCount:2,wireCount:1}
+ ])
+})
+test("Live EDA reload verification failure rolls native files back",async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),"pwb-live-")),dir=path.join(root,"Demo")
+ try{
+  await mkdir(path.join(dir,"pcb"),{recursive:true});await mkdir(path.join(dir,"sch"),{recursive:true})
+  const source={"Demo.eprj3":enc('{"profile":{}}'),"pcb/Board.epcb2":enc("old"),"sch/Page.esch2":enc("old")}
+  for(const [name,data] of Object.entries(source)){const target=path.join(dir,name);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,data)}
+  const hashes=Object.fromEntries(Object.entries(source).map(([name,data])=>[name,sha(data)]))
+  await assert.rejects(applyNativePatchFiles(dir,[root],zipSync({...source,"pcb/Board.epcb2":enc("new")}),hashes,async()=>null,async()=>{throw new Error("EDA object count mismatch")}),/original files were restored/)
+  assert.equal((await readFile(path.join(dir,"pcb/Board.epcb2"))).toString(),"old")
+ }finally{await rm(root,{recursive:true,force:true})}
 })

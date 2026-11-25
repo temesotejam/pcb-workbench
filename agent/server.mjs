@@ -46,7 +46,7 @@ async function start(){
    if(u.pathname==="/api/update"&&req.method==="POST"){
     if(!active)return send(res,409,{error:"Attach the active EasyEDA project first"})
     const baseHashes=JSON.parse(String(req.headers["x-pwb-base-hashes"]??"null"))
-    const result=await bridgeApplyNativePatch(active.port,active.windowId,active.projectDir,active.projectPaths,await body(req),baseHashes)
+    const result=await bridgeApplyNativePatch(active.port,active.windowId,active.projectDir,active.projectPaths,await body(req),baseHashes,active.boardName)
     active.lastVerification=null
     return send(res,200,result)
    }

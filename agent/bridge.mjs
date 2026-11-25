@@ -4,6 +4,7 @@ import os from "node:os"
 import { readFile, writeFile, mkdir, mkdtemp, access } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { checkBomCpl, csvString, validateProjectFiles } from "./engine.mjs"
+import { records } from "../library/native-patch.mjs"
 
 const ports=Array.from({length:10},(_,i)=>49620+i)
 export function parseBridgeEnvelope(data){if(data?.success===false||data?.ok===false)throw new Error(data.error?.message??data.error??data.message??'Bridge execution failed');return data?.result??data?.value??data?.data??data}
@@ -153,6 +154,16 @@ export async function bridgeExportBoard(port,windowId,boardName,projectName=null
  return {files,manifest,zip:zipSync(files,{level:6}),verification}
 }
 
+export function nativeDocumentCounts(entries){
+ const result=[]
+ for(const [file,bytes] of Object.entries(entries)){
+  if(!/\\.(epcb2|esch2)$/i.test(file))continue
+  const parsed=records(bytes),doc=parsed.items.find(x=>x.doc)?.doc
+  if(!doc?.uuid||!doc?.type)throw new Error("Native document header missing: "+file)
+  result.push({file,docType:doc.type,uuid:doc.uuid,componentCount:parsed.items.filter(x=>x.doc?.uuid===doc.uuid&&x.h.type==="COMPONENT").length,wireCount:parsed.items.filter(x=>x.doc?.uuid===doc.uuid&&x.h.type==="WIRE").length})
+ }
+ return result
+}
 export function validateNativePatchTarget(projectDir,projectPaths,info,baseHashes){
  if(!projectDir)throw new Error("The active EasyEDA project folder could not be resolved; native editing is disabled.")
  const dir=path.resolve(projectDir),roots=(projectPaths??[]).map(x=>path.resolve(x))
@@ -163,7 +174,7 @@ export function validateNativePatchTarget(projectDir,projectPaths,info,baseHashe
  for(const [name,sha] of Object.entries(baseHashes))if(!/^[a-f0-9]{64}$/i.test(sha))throw new Error("Invalid base SHA-256 for "+name)
  return {dir,names}
 }
-export async function applyNativePatchFiles(projectDir,projectPaths,zipBytes,baseHashes,beforeWrite=async()=>{}){
+export async function applyNativePatchFiles(projectDir,projectPaths,zipBytes,baseHashes,beforeWrite=async()=>{},afterWrite=async()=>null){
  const info=validateProjectFiles(unzipSync(zipBytes))
  const {dir,names}=validateNativePatchTarget(projectDir,projectPaths,info,baseHashes)
  await beforeWrite()
@@ -189,7 +200,8 @@ export async function applyNativePatchFiles(projectDir,projectPaths,zipBytes,bas
    const actual=await readFile(targets.get(name)),expected=Buffer.from(info.entries[name])
    if(!actual.equals(expected))throw new Error("Read-back verification failed: "+name)
   }
-  return {updatedFiles:updated,projectDir:dir,backupDir:backupRoot,readBackVerified:true,verificationInvalidated:true}
+  const runtimeVerification=await afterWrite({projectName:info.projectName,expectedDocuments:nativeDocumentCounts(info.entries),projectDir:dir})
+  return {updatedFiles:updated,projectDir:dir,backupDir:backupRoot,readBackVerified:true,runtimeVerification,verificationInvalidated:true}
  }catch(error){
   const rollbackErrors=[]
   for(const name of [...updated].reverse()){try{await writeFile(targets.get(name),original.get(name))}catch(e){rollbackErrors.push(name+": "+e.message)}}
@@ -197,7 +209,7 @@ export async function applyNativePatchFiles(projectDir,projectPaths,zipBytes,bas
   throw new Error("Patch failed; original files were restored. Backup: "+backupRoot+". "+error.message)
  }
 }
-export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPaths,zipBytes,baseHashes){
+export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPaths,zipBytes,baseHashes,boardName){
  const saveCode=[
   "const boards=await eda.dmt_Board.getAllBoardsInfo();",
   "for(const b of boards){if(b.pcb?.uuid){const t=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(t)await eda.pcb_Document.save();}}",
@@ -205,5 +217,29 @@ export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPat
   "for(const p of pages){const t=await eda.dmt_EditorControl.openDocument(p.uuid);if(t)await eda.sch_Document.save();}",
   "await new Promise(r=>setTimeout(r,8000));return {saved:true};"
  ].join("\n")
- return await applyNativePatchFiles(projectDir,projectPaths,zipBytes,baseHashes,()=>bridgeExecute(port,windowId,saveCode,120000))
+ const afterWrite=async({expectedDocuments})=>{
+  const pcbDoc=expectedDocuments.find(x=>x.docType==="PCB")
+  const expectedPages=expectedDocuments.filter(x=>x.docType==="SCH_PAGE")
+  if(!pcbDoc||!expectedPages.length)throw new Error("Native source package lacks the PCB or schematic page documents required for live verification.")
+  const args={boardName,pcbUuid:pcbDoc.uuid,expectedPcbComponents:pcbDoc.componentCount,expectedPages:expectedPages.map(x=>({uuid:x.uuid,components:x.componentCount,wires:x.wireCount}))}
+  const code=[
+   "const args="+JSON.stringify(args)+";",
+   "const boards=await eda.dmt_Board.getAllBoardsInfo();const b=boards.find(x=>x.name===args.boardName);",
+   "if(!b||b.pcb?.uuid!==args.pcbUuid)throw new Error('The active PCB identity does not match the patched native source.');",
+   "const pcbTab=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(!pcbTab)throw new Error('Could not reopen patched PCB.');",
+   "await new Promise(r=>setTimeout(r,1500));const pcbComponents=await eda.pcb_PrimitiveComponent.getAll();",
+   "if(pcbComponents.length!==args.expectedPcbComponents)throw new Error('PCB reload component count mismatch: expected '+args.expectedPcbComponents+', got '+pcbComponents.length);",
+   "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo();const linked=pages.filter(p=>p.parentSchematicUuid===b.schematic?.uuid);const pageChecks=[];",
+   "for(const expected of args.expectedPages){const page=linked.find(p=>p.uuid===expected.uuid);if(!page){pageChecks.push({uuid:expected.uuid,passed:false,error:'Page missing from active schematic'});continue;}const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){pageChecks.push({uuid:page.uuid,passed:false,error:'Could not reopen schematic page'});continue;}await new Promise(r=>setTimeout(r,700));const components=await eda.sch_PrimitiveComponent.getAll();const wires=await eda.sch_PrimitiveWire.getAllPrimitiveId();const passed=components.length===expected.components&&wires.length===expected.wires;pageChecks.push({uuid:page.uuid,expectedComponents:expected.components,actualComponents:components.length,expectedWires:expected.wires,actualWires:wires.length,passed});}",
+   "const passed=pageChecks.length===args.expectedPages.length&&pageChecks.every(x=>x.passed);if(!passed)throw new Error('Schematic reload object-count verification failed: '+JSON.stringify(pageChecks));",
+   "return {passed:true,pcb:{expectedComponents:args.expectedPcbComponents,actualComponents:pcbComponents.length},schematics:pageChecks,verifiedAt:new Date().toISOString()};"
+  ].join("\n")
+  return await bridgeExecute(port,windowId,code,120000)
+ }
+ try{
+  return await applyNativePatchFiles(projectDir,projectPaths,zipBytes,baseHashes,()=>bridgeExecute(port,windowId,saveCode,120000),afterWrite)
+ }catch(error){
+  try{await bridgeExecute(port,windowId,"await new Promise(r=>setTimeout(r,8000));return {rollbackReloadWaited:true};",30000)}catch{}
+  throw error
+ }
 }
