@@ -92,7 +92,9 @@ export function checkBomCpl(bomText,cplText,options={}){
   const actualSide=["bottom","b","back"].includes(layer)?"Bottom":"Top",expectedSide=expectedSideByRef[ref];if(expectedSide&&actualSide!==expectedSide)blockers.push(ref+" must be assembled on "+expectedSide+" side, but native CPL specifies "+actualSide+".")
   const x=numeric(row["Mid X"]),y=numeric(row["Mid Y"]),rot=numeric(row.Rotation)
   for(const [field,value] of [["Mid X",x],["Mid Y",y],["Rotation",rot]])if(!Number.isFinite(value))blockers.push("Invalid CPL "+field+" for "+ref)
-  cplNormalized.push({Designator:ref,"Mid X":Number.isFinite(x)?x.toFixed(4):String(row["Mid X"]??""),"Mid Y":Number.isFinite(y)?y.toFixed(4):String(row["Mid Y"]??""),Layer:["bottom","b","back"].includes(layer)?"Bottom":"Top",Rotation:Number.isFinite(rot)?rot.toFixed(4):String(row.Rotation??""),SMD:smd})
+  const normalizedRotation=Number.isFinite(rot)?((rot%360)+360)%360:NaN
+  if(Number.isFinite(rot)&&Math.abs(normalizedRotation-rot)>0.0001)warnings.push("CPL rotation normalized to 0–360 degrees for "+ref+"; confirm orientation in JLCPCB preview.")
+  cplNormalized.push({Designator:ref,"Mid X":Number.isFinite(x)?x.toFixed(4):String(row["Mid X"]??""),"Mid Y":Number.isFinite(y)?y.toFixed(4):String(row["Mid Y"]??""),Layer:["bottom","b","back"].includes(layer)?"Bottom":"Top",Rotation:Number.isFinite(normalizedRotation)?normalizedRotation.toFixed(4):String(row.Rotation??""),SMD:smd})
  }
  const dup=xs=>xs.filter((v,i)=>xs.indexOf(v)!==i)
  if(dup(bRefs).length)blockers.push("Duplicate BOM designators: "+[...new Set(dup(bRefs))].join(", "))
