@@ -26,8 +26,18 @@ if (-not $Node) {
 $NodeVersion = (& node --version).Trim().TrimStart("v")
 if ([version]$NodeVersion -lt [version]"20.0") { throw "Node.js 20+ required. Detected $NodeVersion" }
 Set-Location $Root
-$Esbuild = Test-Path (Join-Path $Root "node_modules/esbuild")\n$Fflate = Test-Path (Join-Path $Root "node_modules/fflate")\nif (-not ($Esbuild -and $Fflate)) { Write-Host "Installing local web bridge dependencies..."; npm install }
+$Esbuild = Test-Path (Join-Path $Root "node_modules/esbuild")
+$Fflate = Test-Path (Join-Path $Root "node_modules/fflate")
+if (-not ($Esbuild -and $Fflate)) { Write-Host "Installing local web bridge dependencies..."; npm install }
 $env:EASYEDA_PRO_CLI = $CliPath
 Write-Host "EasyEDA Pro $Version detected. Starting the local-only web workspace..."
+$Server = Start-Process -FilePath "node" -ArgumentList "agent/server.mjs" -WorkingDirectory $Root -PassThru -WindowStyle Normal
+$Ready = $false
+for ($i = 0; $i -lt 30; $i++) {
+  Start-Sleep -Seconds 1
+  try { $null = Invoke-WebRequest "http://127.0.0.1:8787/api/bootstrap" -UseBasicParsing -TimeoutSec 1; $Ready = $true; break } catch {}
+}
+if (-not $Ready) { Stop-Process -Id $Server.Id -Force -ErrorAction SilentlyContinue; throw "PCB Workbench local server did not start." }
 Start-Process "http://127.0.0.1:8787/handoff.html"
-npm run agent
+Write-Host "Close this PowerShell window to stop the local web server."
+Wait-Process -Id $Server.Id
