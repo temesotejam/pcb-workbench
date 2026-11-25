@@ -1,5 +1,5 @@
 import {unzipSync,zipSync} from 'fflate'
-import {nativeSource,inspectSource,applyPatch,reviewFiles} from '../library/native-patch.mjs'
+import {nativeSource,inspectSource,applyPatch,reviewFiles,hash} from '../library/native-patch.mjs'
 import {inspectHandoff,selectedPath} from '../library/handoff-core.mjs'
 const $=id=>document.getElementById(id), add=(parent,tag,text)=>{const e=document.createElement(tag);e.textContent=text??'';parent.append(e);return e}
 let entries,report,board,tab='pcb',zoom=1,generation=0,urls=[],agentToken=null,agentImport=null,agentVerification=null,dirty=false
@@ -18,9 +18,9 @@ function switchBoard(){board=report.boards[+$('board').value];$('title').textCon
 $('archive').onchange=async e=>{const file=e.target.files?.[0],token=++generation;if(!file)return;$('workspace').hidden=true;$('status').textContent='ZIPを読み込み、原本・部品・端子を照合中…';clearUrls();try{if(file.size>160*1024*1024)throw new Error('Archive exceeds 160 MiB');const data=readArchive(new Uint8Array(await file.arrayBuffer()));const checked=await inspectHandoff(data);if(token!==generation)return;entries=data;report=checked;dirty=false;agentImport=null;agentVerification=null;select($('board'),report.boards.map((b,i)=>[i,b.name]));$('status').textContent='照合完了: '+report.verifiedEntries+' ファイル。ローカル処理のみ。';$('workspace').hidden=false;switchBoard()}catch(err){if(token===generation)$('status').textContent='読み込み中止: '+err.message}}
 $('board').onchange=switchBoard;$('sheet').onchange=draw;$('layer').onchange=draw;$('filter').oninput=draw;$('plus').onclick=()=>{zoom=Math.min(4,zoom*1.25);draw()};$('minus').onclick=()=>{zoom=Math.max(.25,zoom/1.25);draw()};$('report').onclick=()=>{if(report)download(JSON.stringify(report,null,2),'handoff-inspection.json')};document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('[data-tab]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));draw()})
 
-async function localAgent(path,body,zip=false){
+async function localAgent(path,body,zip=false,meta=null){
  if(!agentToken){const boot=await fetch('/api/bootstrap');if(!boot.ok)throw new Error('ローカル起動スクリプトで開いてください');agentToken=(await boot.json()).token}
- const headers={'X-PWB-Token':agentToken};if(zip)headers['Content-Type']='application/zip';else headers['Content-Type']='application/json'
+ const headers={'X-PWB-Token':agentToken};if(zip)headers['Content-Type']='application/zip';else headers['Content-Type']='application/json';if(meta?.baseHashes)headers['X-PWB-Base-Hashes']=JSON.stringify(meta.baseHashes)
  const r=await fetch('/api/'+path,{method:'POST',headers,body:zip?body:JSON.stringify(body??{})})
  const data=await r.json();if(!r.ok)throw new Error(data.error||('HTTP '+r.status));return data
 }
@@ -37,11 +37,13 @@ function localEnginePanel(p){
  close.onclick=async()=>{close.disabled=true;try{await localAgent('close',{});agentImport=null;agentVerification=null;show('ローカルセッションを終了しました')}catch(e){show('終了失敗: '+e.message)}finally{close.disabled=false}}
 }
 async function applyPatchText(patchText){
- const source=nativeSource(entries,board),r=await applyPatch(source,JSON.parse(patchText))
+ const source=nativeSource(entries,board)
+ const baseHashes=Object.fromEntries(await Promise.all(Object.entries(source).map(async([name,data])=>[name,await hash(data)])))
+ const r=await applyPatch(source,JSON.parse(patchText))
  const patchedEntries={...entries}
  for(const [rel,data] of Object.entries(r.source))patchedEntries[board.projectBase+rel]=data
  const patched=zipSync(r.source)
- if(agentImport){await localAgent('update',patched,true);agentImport.sourceUpdated=true}
+ if(agentImport){const result=await localAgent('update',patched,true,{baseHashes});agentImport.sourceUpdated=true;agentImport.updateResult=result}
  entries=patchedEntries;dirty=true;agentVerification=null
  download(zipSync({...r.source,'PATCH_REPORT.json':new TextEncoder().encode(JSON.stringify(r.report,null,2))}),board.key+'-PATCHED-UNVERIFIED.zip','application/zip')
 }

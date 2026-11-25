@@ -1,5 +1,9 @@
 import { zipSync, unzipSync } from "fflate"
-import { checkBomCpl, csvString } from "./engine.mjs"
+import path from "node:path"
+import os from "node:os"
+import { readFile, writeFile, mkdir, mkdtemp, access } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { checkBomCpl, csvString, validateProjectFiles } from "./engine.mjs"
 
 const ports=Array.from({length:10},(_,i)=>49620+i)
 export function parseBridgeEnvelope(data){if(data?.success===false||data?.ok===false)throw new Error(data.error?.message??data.error??data.message??'Bridge execution failed');return data?.result??data?.value??data?.data??data}
@@ -47,6 +51,13 @@ export async function inspectCurrentProject(port,windowId){
  const result=await bridgeExecute(port,windowId,code)
  if(!result?.boards?.length)throw new Error("No PCB board is open in the connected EasyEDA Pro window")
  if(result.isClient!==true)throw new Error("Connected EDA window is not the EasyEDA Pro desktop client")
+ result.projectDir=null
+ if(result.project?.name&&Array.isArray(result.projectPaths)){
+  for(const root of result.projectPaths){
+   const candidate=path.resolve(root,result.project.name)
+   try{await access(path.join(candidate,result.project.name+".eprj3"));result.projectDir=candidate;break}catch{}
+  }
+ }
  return result
 }
 export async function bridgeVerifyBoard(port,windowId,boardName){
@@ -55,11 +66,11 @@ export async function bridgeVerifyBoard(port,windowId,boardName){
  "const boards=await eda.dmt_Board.getAllBoardsInfo();const b=boards.find(x=>x.name===args.boardName);",
  "if(!b||!b.pcb?.uuid)throw new Error('Board or PCB UUID not found: '+args.boardName);",
  "const pcbTab=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(!pcbTab)throw new Error('Could not open PCB document');",
- "await eda.pcb_Document.save();await new Promise(r=>setTimeout(r,1200));",
+ "await eda.pcb_Document.save();await new Promise(r=>setTimeout(r,8000));",
  "let pcbVerbose=null,pcbVerboseError=null;try{pcbVerbose=await eda.pcb_Drc.check(true,false,true);}catch(e){pcbVerboseError=String(e);}",
  "const pcbPassed=await eda.pcb_Drc.check(true,false,false);",
  "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo();const target=pages.filter(p=>p.parentSchematicUuid===b.schematic?.uuid);const schematic=[];",
- "for(const page of target){const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:'Could not open page'});continue;}await eda.sch_Document.save();await new Promise(r=>setTimeout(r,900));let verbose=null,verboseError=null;try{verbose=await eda.sch_Drc.check(true,false,true);}catch(e){verboseError=String(e);}try{const passed=await eda.sch_Drc.check(true,false,false);schematic.push({name:page.name,uuid:page.uuid,passed:passed===true,verbose,verboseError});}catch(e){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:String(e),verbose,verboseError});}}",
+ "for(const page of target){const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:'Could not open page'});continue;}await eda.sch_Document.save();await new Promise(r=>setTimeout(r,8000));let verbose=null,verboseError=null;try{verbose=await eda.sch_Drc.check(true,false,true);}catch(e){verboseError=String(e);}try{const passed=await eda.sch_Drc.check(true,false,false);schematic.push({name:page.name,uuid:page.uuid,passed:passed===true,verbose,verboseError});}catch(e){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:String(e),verbose,verboseError});}}",
  "return {board:{name:b.name,uuid:b.uuid,pcbUuid:b.pcb.uuid,schematicUuid:b.schematic?.uuid??null},pcb:{passed:pcbPassed===true,booleanResult:pcbPassed,verbose,verboseError},schematics:schematic,schematicPassed:target.length>0&&schematic.length===target.length&&schematic.every(x=>x.passed),checkedAt:new Date().toISOString(),engineVersion:eda.sys_Environment.getEditorCurrentVersion()};"
  ].join("\n")
  return await bridgeExecute(port,windowId,code)
@@ -111,4 +122,53 @@ export async function bridgeExportBoard(port,windowId,boardName){
  files["REVIEW_ONLY.json"]=new TextEncoder().encode(JSON.stringify(manifest,null,2))
  files["DO_NOT_ORDER.txt"]=new TextEncoder().encode("REVIEW ONLY — NOT APPROVED FOR ORDER.\nConfirm JLCPCB stock and assembly eligibility, BOM/CPL orientation, all DRC/physical checks and JLCPCB upload preview before ordering.\n")
  return {files,manifest,zip:zipSync(files,{level:6}),verification}
+}
+
+export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPaths,zipBytes,baseHashes){
+ if(!projectDir)throw new Error("The active EasyEDA project folder could not be resolved; native editing is disabled.")
+ const dir=path.resolve(projectDir),roots=(projectPaths??[]).map(x=>path.resolve(x))
+ if(!roots.some(root=>dir.startsWith(root+path.sep)))throw new Error("Project folder is outside EasyEDA's configured project directories.")
+ const info=validateProjectFiles(unzipSync(zipBytes))
+ if(path.basename(dir)!==info.projectName)throw new Error("Patch project name does not match the active EasyEDA project.")
+ const names=Object.keys(info.entries).sort()
+ if(!baseHashes||typeof baseHashes!=="object"||JSON.stringify(Object.keys(baseHashes).sort())!==JSON.stringify(names))throw new Error("Missing or mismatched base revision hashes.")
+ for(const [name,sha] of Object.entries(baseHashes))if(!/^[a-f0-9]{64}$/i.test(sha))throw new Error("Invalid base SHA-256 for "+name)
+ const saveCode=[
+  "const boards=await eda.dmt_Board.getAllBoardsInfo();",
+  "for(const b of boards){if(b.pcb?.uuid){const t=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(t)await eda.pcb_Document.save();}}",
+  "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo();",
+  "for(const p of pages){const t=await eda.dmt_EditorControl.openDocument(p.uuid);if(t)await eda.sch_Document.save();}",
+  "await new Promise(r=>setTimeout(r,8000));return {saved:true};"
+ ].join("\n")
+ await bridgeExecute(port,windowId,saveCode)
+ const original=new Map(),targets=new Map()
+ for(const name of names){
+  const target=path.resolve(dir,name)
+  if(!target.startsWith(dir+path.sep))throw new Error("Unsafe native project path: "+name)
+  const old=await readFile(target),digest=createHash("sha256").update(old).digest("hex")
+  if(digest.toLowerCase()!==baseHashes[name].toLowerCase())throw new Error("The active EasyEDA file changed since import; refusing to overwrite: "+name)
+  original.set(name,old);targets.set(name,target)
+ }
+ const backupRoot=await mkdtemp(path.join(os.tmpdir(),"pcb-workbench-backup-"))
+ for(const [name,data] of original){const backup=path.join(backupRoot,name);await mkdir(path.dirname(backup),{recursive:true});await writeFile(backup,data)}
+ const ordered=names.sort((a,b)=>Number(a.toLowerCase().endsWith(".eprj3"))-Number(b.toLowerCase().endsWith(".eprj3")))
+ const updated=[]
+ try{
+  for(const name of ordered){
+   const next=Buffer.from(info.entries[name]),old=original.get(name)
+   if(old.equals(next))continue
+   await writeFile(targets.get(name),next);updated.push(name)
+  }
+  for(const name of names){
+   const actual=await readFile(targets.get(name)),expected=Buffer.from(info.entries[name])
+   if(!actual.equals(expected))throw new Error("Read-back verification failed: "+name)
+  }
+  await new Promise(r=>setTimeout(r,2000))
+  return {updatedFiles:updated,projectDir:dir,backupDir:backupRoot,readBackVerified:true,verificationInvalidated:true}
+ }catch(error){
+  const rollbackErrors=[]
+  for(const name of [...updated].reverse()){try{await writeFile(targets.get(name),original.get(name))}catch(e){rollbackErrors.push(name+": "+e.message)}}
+  if(rollbackErrors.length)throw new Error("Patch failed and rollback was incomplete. Backup: "+backupRoot+". "+rollbackErrors.join("; "))
+  throw new Error("Patch failed; original files were restored. Backup: "+backupRoot+". "+error.message)
+ }
 }

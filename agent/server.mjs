@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { readFile } from "node:fs/promises"
 import { randomBytes } from "node:crypto"
 import { build } from "esbuild"
-import { discoverBridge, bridgeWindows, selectBridgeWindow, inspectCurrentProject, bridgeVerifyBoard, bridgeExportBoard } from "./bridge.mjs"
+import { discoverBridge, bridgeWindows, selectBridgeWindow, inspectCurrentProject, bridgeVerifyBoard, bridgeExportBoard, bridgeApplyNativePatch } from "./bridge.mjs"
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),".."),site=path.join(root,"site"),port=Number(process.env.PWB_PORT||8787),host="127.0.0.1"
 const origins=new Set(["http://127.0.0.1:"+port,"http://localhost:"+port]),token=randomBytes(32).toString("hex")
 let bridge=null,active=null
@@ -40,8 +40,15 @@ async function start(){
     const project=await inspectCurrentProject(b.port,windowId)
     const board=project.boards.find(x=>x.name===boardName)
     if(!board)throw new Error("The active EasyEDA Pro project does not contain board '"+boardName+"'. Open the matching NUCLEO project in EasyEDA Pro. Available boards: "+project.boards.map(x=>x.name).join(", "))
-    active={port:b.port,windowId,project:project.project,boards:project.boards,pages:project.pages,boardName,lastVerification:null,engineVersion:project.engineVersion}
+    active={port:b.port,windowId,project:project.project,projectDir:project.projectDir,projectPaths:project.projectPaths,boards:project.boards,pages:project.pages,boardName,lastVerification:null,engineVersion:project.engineVersion}
     return send(res,200,{projectName:project.project?.name??project.project?.projectName??"Active EasyEDA project",engineVersion:project.engineVersion,boards:project.boards,pages:project.pages,board,windowId,projectPaths:project.projectPaths})
+   }
+   if(u.pathname==="/api/update"&&req.method==="POST"){
+    if(!active)return send(res,409,{error:"Attach the active EasyEDA project first"})
+    const baseHashes=JSON.parse(String(req.headers["x-pwb-base-hashes"]??"null"))
+    const result=await bridgeApplyNativePatch(active.port,active.windowId,active.projectDir,active.projectPaths,await body(req),baseHashes)
+    active.lastVerification=null
+    return send(res,200,result)
    }
    if(u.pathname==="/api/verify"&&req.method==="POST"){
     if(!active)return send(res,409,{error:"Connect to EasyEDA Pro and attach the active project first"})
