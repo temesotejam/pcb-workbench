@@ -5,7 +5,7 @@ export const hash=async b=>Array.from(new Uint8Array(await crypto.subtle.digest(
 export const allowed={
  'PCB:LINE':['startX','startY','endX','endY','width'],
  'PCB:VIA':['centerX','centerY','viaDiameter','holeDiameter'],
- 'PCB:COMPONENT':['x','y','angle'],
+ 'PCB:COMPONENT':['x','y','angle','layerId'],
  'SCH_PAGE:COMPONENT':['x','y','rotation'],
  'SCH_PAGE:LINE':['startX','startY','endX','endY'],
  'SCH_PAGE:TEXT':['x','y','rotation','value']
@@ -26,11 +26,18 @@ export async function inspectSource(source){
  const documents=[]
  for(const [path,bytes] of Object.entries(source)){
   if(!/\.(epcb2|esch2)$/.test(path))continue
-  const sha=await hash(bytes)
-  for(const {doc,h,v} of records(bytes).items){
-   const fields=allowed[doc?.type+':'+h.type];if(!fields||typeof h.id!=='string')continue
+  const sha=await hash(bytes),items=records(bytes).items,attributes=new Map()
+  for(const {h,v} of items){
+   if(h.type!=="ATTR"||!v?.parentId||!v?.key)continue
+   const value=attributes.get(v.parentId)??Object.create(null)
+   value[v.key]=v.value;attributes.set(v.parentId,value)
+  }
+  for(const {doc,h,v} of items){
+   const fields=allowed[doc?.type+':'+h.type]
+   if(!fields||typeof h.id!=='string')continue
    const values=Object.fromEntries(fields.filter(k=>Object.hasOwn(v,k)).map(k=>[k,v[k]]))
-   documents.push({path,baseSha256:sha,docType:doc.type,docUuid:doc.uuid,recordType:h.type,recordId:h.id,fields:values,net:v.netName??null})
+   const attrs=h.type==='COMPONENT'?attributes.get(h.id)??Object.create(null):null
+   documents.push({path,baseSha256:sha,docType:doc.type,docUuid:doc.uuid,recordType:h.type,recordId:h.id,fields:values,designator:attrs?.Designator??null,uniqueId:attrs?.['Unique ID']??null,net:v.netName??null})
   }
  }
  return {schema:'pcb-workbench-native-records/v1',documents,unitNotes:'PCB coordinates mil; schematic coordinates native 10mil; native angle conventions'}
@@ -49,6 +56,7 @@ export async function applyPatch(source,patch){
    const value=c.set[field];check(Object.hasOwn(v,field)&&v[field]===c.expect[field],'Stale field: '+field)
    if(field==='value')check(typeof value==='string'&&value.length<=2000,'Invalid text')
    else check(typeof value==='number'&&Number.isFinite(value)&&(!['width','viaDiameter','holeDiameter'].includes(field)||value>0),'Invalid number')
+   if(c.docType==='PCB'&&c.recordType==='COMPONENT'&&field==='layerId')check(value===1||value===2,'PCB component layerId must be 1 (Top) or 2 (Bottom)')
   }
   Object.assign(v,c.set)
   check(c.recordType!=='VIA'||v.viaDiameter>v.holeDiameter&&v.holeDiameter>0,'Invalid via annulus')

@@ -10,3 +10,32 @@ test('reject mismatched old value',async()=>{const p=await change();p.changes[0]
 test('reject invalid geometry and net edits',async()=>{const p=await change();p.changes[0].set.width=0;await expect(applyPatch(source,p)).rejects.toThrow('Invalid number');p.changes[0].set={netName:'B'};p.changes[0].expect={netName:'A'};await expect(applyPatch(source,p)).rejects.toThrow('Unsupported')})
 test('duplicate record patch rejected',async()=>{const p=await change();p.changes.push(p.changes[0]);await expect(applyPatch(source,p)).rejects.toThrow('Duplicate')})
 test('candidate CPL never flips assembly side automatically',()=>{const board={key:'Upper',pcbSha:'test',gerber:'g',bom:[{Comment:'a',Designator:'CN7',Footprint:'f','LCSC Part #':'C1'}],cpl:[{Designator:'CN7','Mid X':'1mm','Mid Y':'-2mm',Rotation:'270',Layer:'T'}]};const files=reviewFiles({g:enc.encode('test')},board);expect(dec.decode(files.CPL_AS_DRAWN_REVIEW_ONLY_csv??files['CPL_AS_DRAWN_REVIEW_ONLY.csv'])).toContain('"Top"');expect(JSON.parse(dec.decode(files['DO_NOT_ORDER.json'])).orderReady).toBe(false)})
+
+test('PCB component layerId can be changed between top and bottom only',async()=>{
+ const pcb={'pcb/board.epcb2':enc.encode(
+  row({type:'DOCHEAD'},{docType:'PCB',uuid:'p'})+
+  row({type:'COMPONENT',id:'cn7'},{x:100,y:200,angle:90,layerId:1})
+ )}
+ const p={schema:'pcb-workbench-native-patch/v1',changes:[{
+  path:'pcb/board.epcb2',baseSha256:await hash(pcb['pcb/board.epcb2']),docType:'PCB',docUuid:'p',recordType:'COMPONENT',recordId:'cn7',
+  expect:{layerId:1},set:{layerId:2}
+ }]}
+ const result=await applyPatch(pcb,p)
+ expect(records(result.source['pcb/board.epcb2']).items.find(x=>x.h.type==='COMPONENT').v.layerId).toBe(2)
+ p.changes[0].set.layerId=3
+ await expect(applyPatch(pcb,p)).rejects.toThrow('layerId must be 1 (Top) or 2 (Bottom)')
+})
+test('inspectSource includes component designators from native ATTR records',async()=>{
+ const pcb={'pcb/board.epcb2':enc.encode(
+  row({type:'DOCHEAD'},{docType:'PCB',uuid:'p'})+
+  row({type:'COMPONENT',id:'cn7'},{x:100,y:200,angle:90,layerId:1})+
+  row({type:'ATTR',id:'cn7e0'},{parentId:'cn7',key:'Designator',value:'CN7'})+
+  row({type:'ATTR',id:'cn7e1'},{parentId:'cn7',key:'Unique ID',value:'lowerCN7'})
+ )}
+ const {inspectSource}=await import('./native-patch.mjs')
+ const result=await inspectSource(pcb)
+ const component=result.documents.find(x=>x.recordType==='COMPONENT')
+ expect(component.designator).toBe('CN7')
+ expect(component.uniqueId).toBe('lowerCN7')
+ expect(component.fields.layerId).toBe(1)
+})
