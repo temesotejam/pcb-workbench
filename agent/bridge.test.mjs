@@ -5,7 +5,7 @@ import os from "node:os"
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { zipSync } from "fflate"
-import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles } from "./bridge.mjs"
+import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles, expectedAssemblySideProfile } from "./bridge.mjs"
 
 test("Bridge response envelopes unwrap values and reject failures",()=>{
  assert.deepEqual(parseBridgeEnvelope({success:true,result:{ok:1}}),{ok:1})
@@ -73,4 +73,10 @@ test("Native patch pre-save failure leaves files unchanged",async()=>{
   await assert.rejects(applyNativePatchFiles(dir,[root],zipSync({...source,"pcb/Board.epcb2":enc("new")}),hashes,async()=>{throw new Error("save failed")}),/save failed/)
   assert.equal((await readFile(path.join(dir,"pcb/Board.epcb2"))).toString(),"old")
  }finally{await rm(root,{recursive:true,force:true})}
+})
+
+test("NUCLEO upper and lower projects have distinct CN7/CN10 assembly sides",()=>{
+ assert.deepEqual(expectedAssemblySideProfile("NUCLEO-F401RE Rev1.5"),{CN7:"Bottom",CN10:"Bottom"})
+ assert.deepEqual(expectedAssemblySideProfile("NUCLEO-F401RE Lower GPIO Proto R1"),{CN7:"Top",CN10:"Top"})
+ assert.deepEqual(expectedAssemblySideProfile("Unregistered project"),{})
 })

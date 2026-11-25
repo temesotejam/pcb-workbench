@@ -99,6 +99,11 @@ async function exportFiles(port,windowId,boardName){
  ].join("\n")
  return await bridgeExecute(port,windowId,code,120000)
 }
+export function expectedAssemblySideProfile(projectName){
+ if(projectName==="NUCLEO-F401RE Rev1.5")return {CN7:"Bottom",CN10:"Bottom"}
+ if(projectName==="NUCLEO-F401RE Lower GPIO Proto R1")return {CN7:"Top",CN10:"Top"}
+ return {}
+}
 export async function bridgeExportBoard(port,windowId,boardName,projectName=null){
  const verification=await bridgeVerifyBoard(port,windowId,boardName)
  const result=await exportFiles(port,windowId,boardName)
@@ -115,7 +120,7 @@ export async function bridgeExportBoard(port,windowId,boardName,projectName=null
  if(!verification.schematicPassed)blockers.push("Schematic ERC/DRC contains errors, unknown violations or an unavailable detailed result.")
  for(const item of verification.pcb?.warnings??[])warnings.push("PCB warning: "+(item.ruleName??item.rule??item.explanation??JSON.stringify(item)))
  for(const page of verification.schematics??[])for(const item of page.warnings??[])warnings.push("Schematic "+page.name+" warning: "+(item.rule??item.type??item.message??JSON.stringify(item)))
- const expectedSideByRef=projectName==="NUCLEO-F401RE Rev1.5"?{CN7:"Bottom",CN10:"Bottom"}:projectName==="NUCLEO-F401RE Lower GPIO Proto R1"?{CN7:"Top",CN10:"Top"}:{}
+ const expectedSideByRef=expectedAssemblySideProfile(projectName)
  if(!Object.keys(expectedSideByRef).length)warnings.push("No board-specific assembly-side profile is registered for project "+String(projectName??"(unknown)")+".")
  const parity=checkBomCpl(new TextDecoder().decode(files["BOM.csv"]),new TextDecoder().decode(files["CPL.csv"]),{expectedSideByRef})
  blockers.push(...parity.blockers);warnings.push(...parity.warnings)
