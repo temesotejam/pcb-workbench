@@ -41,7 +41,7 @@ function snapLabelsAndWiresToSymbolPins(source:string){
   const pinBySymbolUnit=new Map<string,{x:number,y:number}[]>()
   for(const libBlock of sexprBlocks(source,"(lib_symbols")){
     for(const root of sexprBlocks(libBlock.text,"(symbol")){
-      const libName=root.text.match(/^\(symbol\s+"([^"]+)"/)?.[1],libId=libName?"tscircuit:"+libName:undefined
+      const libId=root.text.match(/^\(symbol\s+"([^"]+)"/)?.[1]
       if(!libId)continue
       const nestedStart=root.text.indexOf("\n")+1
       for(const child of sexprBlocks(root.text.slice(nestedStart),"(symbol")){
