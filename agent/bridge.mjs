@@ -129,15 +129,19 @@ export async function bridgeExportBoard(port,windowId,boardName){
  return {files,manifest,zip:zipSync(files,{level:6}),verification}
 }
 
-export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPaths,zipBytes,baseHashes){
+export function validateNativePatchTarget(projectDir,projectPaths,info,baseHashes){
  if(!projectDir)throw new Error("The active EasyEDA project folder could not be resolved; native editing is disabled.")
  const dir=path.resolve(projectDir),roots=(projectPaths??[]).map(x=>path.resolve(x))
  if(!roots.some(root=>dir.startsWith(root+path.sep)))throw new Error("Project folder is outside EasyEDA's configured project directories.")
- const info=validateProjectFiles(unzipSync(zipBytes))
  if(path.basename(dir)!==info.projectName)throw new Error("Patch project name does not match the active EasyEDA project.")
  const names=Object.keys(info.entries).sort()
  if(!baseHashes||typeof baseHashes!=="object"||JSON.stringify(Object.keys(baseHashes).sort())!==JSON.stringify(names))throw new Error("Missing or mismatched base revision hashes.")
  for(const [name,sha] of Object.entries(baseHashes))if(!/^[a-f0-9]{64}$/i.test(sha))throw new Error("Invalid base SHA-256 for "+name)
+ return {dir,names}
+}
+export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPaths,zipBytes,baseHashes){
+ const info=validateProjectFiles(unzipSync(zipBytes))
+ const {dir,names}=validateNativePatchTarget(projectDir,projectPaths,info,baseHashes)
  const saveCode=[
   "const boards=await eda.dmt_Board.getAllBoardsInfo();",
   "for(const b of boards){if(b.pcb?.uuid){const t=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(t)await eda.pcb_Document.save();}}",
