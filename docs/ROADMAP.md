@@ -43,3 +43,10 @@
 - Official API-backed board enumeration, PCB DRC detailed result + pass gate, schematic DRC per page, Gerber/BOM/CPL/STEP/netlist exports and BOM/CPL reference parity checks. All exports remain REVIEW_ONLY; stock, JLCPCB assembly class, underside/THT fit and final upload preview require manual confirmation.
 - PowerShell launcher checks EasyEDA Pro desktop CLI >=4.1.60 and Node.js >=20. The online edition is not supported for the CLI bridge.
 - Remaining: verify on the user's installed EasyEDA Pro runtime (not accessible from this cloud session), test both boards on the real client, confirm JLCPCB upload/preview and physical/electrical checks. Do not claim production release before those gates.
+
+## v0.6 reuse existing EasyEDA Pro Bridge
+
+- Local-only HTTP agent scans 49620–49629, reads `/health` and `/eda-windows`, attaches to the active EasyEDA Pro window and executes official EDA API code through `/execute`.
+- Browser UI now attaches to the user's open NUCLEO board, runs PCB + all linked schematic ERC/DRC, exports Gerber/BOM/CPL/STEP/netlist and normalizes JLCPCB review files. All exports remain REVIEW_ONLY; actual JLCPCB preview, stock and THT/side review are mandatory.
+- No separate EasyEDA Pro CLI installation required. The user's existing API Gateway / Bridge Server is reused.
+- Remaining: verify the exact installed Bridge Server endpoint/response shape and run both boards against the user's desktop session; native AI edit commands still need direct API or verified project-file write support.

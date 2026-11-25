@@ -69,7 +69,7 @@ export function checkBomCpl(bomText,cplText){
  if(extra.length)blockers.push("CPL references not in BOM: "+extra.join(", "))
  return {bomRows:bom.length,cplRows:cpl.length,bomReferences:bRefs.length,cplReferences:cRefs.length,referenceParity:!blockers.length,bomNormalized,cplNormalized,blockers,warnings}
 }
-function csvString(headers,rows){
+export function csvString(headers,rows){
  const cell=v=>'"'+String(v??"").replaceAll('"','""')+'"'
  return [headers,...rows.map(r=>headers.map(h=>r[h]))].map(r=>r.map(cell).join(",")).join("\r\n")+"\r\n"
 }

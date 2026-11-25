@@ -22,7 +22,7 @@ jobs:
       - name: Install circuit engine
         run: bun install
       - name: Catalog and local agent tests
-        run: bun test library/catalog.test.ts library/handoff-core.test.ts library/native-patch.test.ts && node --test agent/engine.test.mjs
+        run: bun test library/catalog.test.ts library/handoff-core.test.ts library/native-patch.test.ts && node --test agent/engine.test.mjs agent/bridge.test.mjs
       - name: Generate circuit and KiCad sources
         run: bun run build
       - name: Install official KiCad 10 stable packages

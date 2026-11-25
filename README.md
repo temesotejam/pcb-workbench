@@ -4,7 +4,7 @@ AI-operated, browser-based PCB design and manufacturing workspace for JLCPCB.
 
 ユーザーはチャットで設計を指示し、AIがGitHubの設計ソースを編集・検証します。ユーザーはブラウザで結果を確認し、最終的なJLCPCBへのアップロード、発注、決済だけを行います。
 
-## Current status: v0.5 browser workbench + local EasyEDA Pro engine — REVIEW ONLY
+## Current status: v0.6 browser workbench + local EasyEDA Pro Bridge — REVIEW ONLY
 
 [![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
 
@@ -27,7 +27,7 @@ See [the parts policy](docs/PARTS.md). Register and verify actual JLCPCB C-numbe
 
 ## Development
 
-The browser is the design workspace. Existing EasyEDA Pro V3 projects require the EasyEDA Pro **desktop** CLI as a local engine (v4.1.60+); the online/browser edition does not expose this session bridge. Run `start-workbench.ps1` on Windows to launch a loopback-only web UI. ChatGPT can prepare native JSON patches from the editable-record export; import them in the browser, then use the local engine to run official ERC/DRC and create a review-only manufacturing package. No CAD GUI operation is needed. GitHub Actions builds and tests the public UI; private design files stay on the user's PC. For optional local development with Bun, Python 3 and KiCad 10:
+The browser is the design workspace. The browser is the design workspace. The local agent connects to the already-installed EasyEDA Pro API Gateway / Bridge Server by scanning ports 49620–49629. Run `start-workbench.ps1` on Windows to launch a loopback-only web UI; keep EasyEDA Pro and its Bridge Server running. Attach the open NUCLEO project, then run official ERC/DRC and export a review-only manufacturing package. No public tunnel or order automation. GitHub Actions builds/tests the public UI; private design files stay on the user's PC. For optional local development with Bun, Python 3 and KiCad 10:
 
 ```sh
 bun install
