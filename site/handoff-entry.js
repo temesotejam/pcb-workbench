@@ -35,6 +35,13 @@ function localEnginePanel(p){
  exp.onclick=async()=>{exp.disabled=true;try{if(!agentVerification||agentVerification.board?.name!==board.name)throw new Error('先に選択中の基板で公式ERC / DRCを実行してください');const r=await localAgent('export',{boardName:board.name});const raw=atob(r.zipBase64),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);download(bytes,r.fileName,'application/zip');show('確認用データを生成しました。発注承認ではありません。');details.textContent=JSON.stringify(r.manifest,null,2)}catch(e){show('出力失敗: '+e.message)}finally{exp.disabled=false}}
  close.onclick=async()=>{close.disabled=true;try{await localAgent('close',{});agentImport=null;agentVerification=null;show('ローカルセッションを終了しました')}catch(e){show('終了失敗: '+e.message)}finally{close.disabled=false}}
 }
+async function applyPatchText(patchText){
+ const source=nativeSource(entries,board),r=await applyPatch(source,JSON.parse(patchText))
+ Object.assign(entries,r.source);dirty=true;agentVerification=null
+ const patched=zipSync(nativeSource(entries,board))
+ if(agentImport){await localAgent('update',patched,true);agentImport.sourceUpdated=true}
+ download(zipSync({...r.source,'PATCH_REPORT.json':new TextEncoder().encode(JSON.stringify(r.report,null,2))}),board.key+'-PATCHED-UNVERIFIED.zip','application/zip')
+}
 function nativePanel(p){
  localEnginePanel(p)
  add(p,'h2','設計元データ・AI差分')
@@ -46,7 +53,7 @@ function nativePanel(p){
  inspectButton.onclick=async()=>{try{download(JSON.stringify(await inspectSource(source),null,2),board.key+'-editable-records.json')}catch(e){status.textContent=e.message}}
  const lbl=add(p,'p','AI差分JSONを選択'),file=add(lbl,'input');file.type='file';file.accept='.json,application/json'
  const status=add(p,'p','原本は未変更です。')
- file.onchange=async()=>{try{const f=file.files?.[0];if(!f)return;if(f.size>5*1024*1024)throw new Error('Patch too large');const r=await applyPatch(source,JSON.parse(await f.text()));Object.assign(entries,r.source);dirty=true;agentVerification=null;const patched=zipSync(nativeSource(entries,board));if(agentImport){await localAgent('update',patched,true);status.textContent='差分を適用し、EasyEDA Proの作業コピーへ反映しました。再度DRCを実行してください。'}else{status.textContent='差分を適用しました。ローカルエンジンへ読み込んでください。'}download(zipSync({...r.source,'PATCH_REPORT.json':new TextEncoder().encode(JSON.stringify(r.report,null,2))}),board.key+'-PATCHED-UNVERIFIED.zip','application/zip');}catch(e){status.textContent='差分適用中止: '+e.message}}
+ file.onchange=async()=>{try{const f=file.files?.[0];if(!f)return;if(f.size>5*1024*1024)throw new Error('Patch too large');const patchText=await f.text();await applyPatchText(patchText);}catch(e){status.textContent='差分適用中止: '+e.message}}
  add(p,'h2','変更前の製造資料')
  add(p,'p','既存Gerberと形式整理済みBOM/CPLを照合用として出力します。上下実装、在庫、ERC等は未承認。発注用として使用しないでください。')
  const b=add(p,'button','製造確認用ZIP（発注不可）')
