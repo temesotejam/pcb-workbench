@@ -27,9 +27,11 @@ async function localAgent(path,body,zip=false,meta=null){
 function localEnginePanel(p){
  add(p,'h2','EasyEDA Pro ネイティブエンジン')
  add(p,'p','既に導入済みのEasyEDA Pro API Gateway / Bridge Serverへ接続します。49620〜49629番ポートを自動検索し、通信はローカル内だけで完結します。')
- const status=add(p,'p','未接続'),connect=add(p,'button','EasyEDA Proに接続'),load=add(p,'button','選択中の基板を読み込む'),verify=add(p,'button','公式ERC / DRCを実行'),exp=add(p,'button','JLCPCB確認用データを生成'),close=add(p,'button','EasyEDAとの接続を解除'),details=add(p,'pre','')
+ const status=add(p,'p','未接続'),connect=add(p,'button','EasyEDA Proに接続'),windowSelect=add(p,'select',''),selectWindow=add(p,'button','選択したEasyEDAウィンドウを使用'),load=add(p,'button','選択中の基板を読み込む'),verify=add(p,'button','公式ERC / DRCを実行'),exp=add(p,'button','JLCPCB確認用データを生成'),close=add(p,'button','EasyEDAとの接続を解除'),details=add(p,'pre','')
+ let windows=[]
  const show=x=>{status.textContent=x}
- connect.onclick=async()=>{connect.disabled=true;try{const r=await localAgent('health',{});const count=r.windows?.length??0;show('Bridge接続済み · port '+r.port+' · EasyEDAウィンドウ '+count+'件');details.textContent=JSON.stringify({health:r.health,windows:r.windows,activeWindowId:r.activeWindowId},null,2)}catch(e){show('接続できません: '+e.message)}finally{connect.disabled=false}}
+ connect.onclick=async()=>{connect.disabled=true;try{const r=await localAgent('health',{});windows=r.windows??[];windowSelect.replaceChildren();for(const w of windows){const id=w.id??w.windowId??w.uuid;if(!id)continue;const option=document.createElement('option');option.value=id;option.textContent=w.title??w.name??('EasyEDA window '+id);windowSelect.append(option)}if(r.activeWindowId)windowSelect.value=r.activeWindowId;show('Bridge接続済み · port '+r.port+' · EasyEDAウィンドウ '+windows.length+'件');details.textContent=JSON.stringify({health:r.health,windows,activeWindowId:r.activeWindowId},null,2)}catch(e){show('接続できません: '+e.message)}finally{connect.disabled=false}}
+ selectWindow.onclick=async()=>{selectWindow.disabled=true;try{if(!windowSelect.value)throw new Error('EasyEDAウィンドウが見つかりません');const r=await localAgent('select-window',{windowId:windowSelect.value});agentImport=null;agentVerification=null;show('EasyEDAウィンドウを選択しました。対象基板を読み込んでください。');details.textContent=JSON.stringify(r,null,2)}catch(e){show('ウィンドウ選択失敗: '+e.message)}finally{selectWindow.disabled=false}}
  load.onclick=async()=>{load.disabled=true;try{if(!board.nativeBoardName)throw new Error('この引き継ぎデータにEasyEDAの板名がありません');agentImport=await localAgent('attach',{boardName:board.nativeBoardName});agentImport.boardName=board.name;agentVerification=null;show('ローカル読込済み · '+agentImport.projectName+' · '+agentImport.engineVersion);details.textContent=JSON.stringify(agentImport,null,2)}catch(e){show('読込失敗: '+e.message)}finally{load.disabled=false}}
  const nativeBoardName=()=>agentImport?.boards?.find(x=>x.pcbUuid)?.name
  verify.onclick=async()=>{verify.disabled=true;try{if(!agentImport||agentImport.boardName!==board.name)throw new Error('選択中の基板を先にローカルエンジンへ読み込んでください');const name=nativeBoardName();if(!name)throw new Error('ローカルプロジェクトに対応するPCBがありません');agentVerification=await localAgent('verify',{boardName:name});const ok=agentVerification.pcb?.passed&&agentVerification.schematicPassed;show('公式検証完了 · '+name+' · '+(ok?'全検証PASS':'要確認・違反または未完了あり'));details.textContent=JSON.stringify(agentVerification,null,2)}catch(e){show('検証失敗: '+e.message)}finally{verify.disabled=false}}
@@ -47,8 +49,8 @@ async function applyPatchText(patchText){
  let updateResult=null
  if(liveApplied){updateResult=await localAgent('update',patched,true,{baseHashes});agentImport.sourceUpdated=true;agentImport.updateResult=updateResult}
  entries=patchedEntries;dirty=true;agentVerification=null
- return {liveApplied,updateResult}
  download(zipSync({...r.source,'PATCH_REPORT.json':new TextEncoder().encode(JSON.stringify(r.report,null,2))}),board.key+'-PATCHED-UNVERIFIED.zip','application/zip')
+ return {liveApplied,updateResult}
 }
 function nativePanel(p){
  localEnginePanel(p)
