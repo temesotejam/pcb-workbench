@@ -1,6 +1,6 @@
 {
   "name": "pcb-workbench",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "circuit-json-to-kicad": "0.0.282",
     "circuit-to-svg": "0.0.463",
     "react": "19.1.0",
-    "polygon-clipping": "0.15.7"
+    "polygon-clipping": "0.15.7",
+    "easyeda": "0.0.392"
   }
 }

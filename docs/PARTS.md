@@ -16,3 +16,7 @@ References:
 - https://github.com/tscircuit/docs/blob/main/docs/web-apis/jlcsearch-api.md
 - https://jlcpcb.com/help/article/jlcpcb-online-api-available-now
 - https://jlcpcb.com/help/article/instruction-on-searching-jlcpcb-electronic-components
+
+## Footprint resolver
+
+The core Circuit instance does not configure a JLCPCB resolver automatically. `library/footprints.ts` explicitly registers an EasyEDA converter resolver and checks the returned supplier number and physical pad count. It reuses identical imports within one build. Network or identity failures stop the build; no generic footprint substitution. Persisted, reviewed footprint snapshots and model licensing review are still required for production.

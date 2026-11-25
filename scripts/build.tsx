@@ -4,6 +4,7 @@ import { convertCircuitJsonToSchematicSvg, convertCircuitJsonToPcbSvg } from "ci
 import { cp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises"
 import { resolve } from "node:path"
 import { resolveParts, assertSourceParity } from "../library/parts"
+import { jlcpcbFootprintResolver } from "../library/footprints"
 
 const root = resolve(import.meta.dir, "..")
 const out = resolve(root, "dist")
@@ -24,15 +25,16 @@ for (const id of (await readdir(resolve(root, "projects"))).sort()) {
   try {
     result.parts = resolveParts(meta.parts)
     const Design = (await import(resolve(dir, "design.tsx"))).default
-    const circuit = new Circuit()
+    const circuit = new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})
     circuit.add(<Design />)
     await circuit.renderUntilSettled()
     const json = circuit.getCircuitJson()
-    assertSourceParity(json,result.parts)
     await writeFile(resolve(path,"circuit.json"),JSON.stringify(json,null,2))
+    result.files.push("circuit.json")
+    assertSourceParity(json,result.parts)
     await writeFile(resolve(path,"schematic.svg"),convertCircuitJsonToSchematicSvg(json))
     await writeFile(resolve(path,"pcb.svg"),convertCircuitJsonToPcbSvg(json))
-    result.files.push("circuit.json","schematic.svg","pcb.svg")
+    result.files.push("schematic.svg","pcb.svg")
     const sch = new CircuitJsonToKicadSchConverter(json)
     sch.runUntilFinished()
     for (const f of sch.getOutputFiles({schematicFilename:"board.kicad_sch"})) {

@@ -19,6 +19,8 @@ jobs:
         run: python3 -m unittest discover -s tests -v
       - name: Install circuit engine
         run: bun install
+      - name: Catalog integrity tests
+        run: bun test library/catalog.test.ts
       - name: Generate circuit and KiCad sources
         run: bun run build
       - name: Install official KiCad 10 stable packages
@@ -32,7 +34,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python3 scripts/fabricate.py dist
       - name: Check browser module syntax
-        run: node --check site/app.js
+        run: node --check site/app.js && node --check site/catalog.js
       - name: Upload DRAFT outputs and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
