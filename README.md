@@ -2,7 +2,7 @@
 
 AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, with a local EasyEDA Pro bridge.
 
-## Current status: v0.7.0 — native patch workflow implemented; REVIEW ONLY
+## Current status: v0.8.0 — live native patch reload gate and zero-ERC/DRC integration coupon; REVIEW ONLY
 
 [![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
 
@@ -16,10 +16,20 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 
 - Import the verified NUCLEO handoff ZIP in the browser. The adapter strips its single archive root folder, selects only the current upper/lower native project sources and checks the manifest SHA-256 values. The original ZIP and native project files are not committed to this public repository.
 - Select the upper or lower project, connect to the existing EasyEDA Pro API Gateway / Bridge Server on localhost ports 49620–49629, select an EasyEDA window and attach to the matching native board.
-- Run fresh PCB DRC and linked schematic ERC/DRC through the official EasyEDA Pro API.
+- Run fresh PCB DRC and linked schematic ERC/DRC through the official EasyEDA Pro API. Save the full verification result as JSON to share for follow-up analysis.
 - Export native Gerber, BOM, CPL, STEP and netlist where the installed API supports them. Normalize BOM/CPL columns and coordinates, check designator parity, required Gerber layers, LCSC part IDs and known THT/underside warnings.
-- Import an AI-generated, guarded JSON patch. Before writing, the local agent saves open EDA documents, checks every source file against the exact SHA-256 revision, writes only changed native files, reads them back, keeps a backup and rolls back if a write fails. A successful edit invalidates previous DRC and manufacturing output; rerun checks.
+- Import an AI-generated, guarded JSON patch. Before writing, the local agent saves open EDA documents, checks every source file against the exact SHA-256 revision, writes only changed native files, reads them back, waits for the EDA reload and checks PCB component plus linked schematic component/wire counts. It keeps a backup and rolls back if the write or reload check fails. A successful edit invalidates previous DRC and manufacturing output; rerun checks.
 - The local web server binds only to \`127.0.0.1\`. No public tunnel, order API or payment automation.
+
+### Latest automated verification (25 Nov 2026)
+
+[GitHub Actions run 45575926500](https://github.com/temesotejam/pcb-workbench/actions/runs/45575926500) completed successfully, including the GitHub Pages deployment. The generic two-resistor integration coupon was independently checked with KiCad 10.0.8:
+
+- ERC: 0 errors, 0 warnings.
+- PCB DRC: 0 violations, 0 unconnected items, 0 schematic/PCB parity issues.
+- Manufacturing release: **blocked / REVIEW ONLY**. Exact LCSC part availability, component geometry/datasheets, centroid and rotation review, and JLCPCB upload preview are still outstanding.
+
+This test coupon is a software integration fixture, **not** the NUCLEO-F401RE upper/lower boards. Those two real boards still require a fresh check in the user's EasyEDA Pro session.
 
 ### Important limits
 
