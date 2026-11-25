@@ -1,13 +1,13 @@
 {
   "name": "pcb-workbench",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "bun run scripts/build.tsx",
     "test": "python3 -m unittest discover -s tests -v",
     "agent": "node agent/server.mjs",
-    "test:agent": "node --test agent/engine.test.mjs"
+    "test:agent": "node --test agent/engine.test.mjs agent/bridge.test.mjs"
   },
   "dependencies": {
     "tscircuit": "0.0.3289",

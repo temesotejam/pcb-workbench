@@ -1,70 +1,59 @@
 # PCB Workbench
 
-AI-operated, browser-based PCB design and manufacturing workspace for JLCPCB.
+AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, with a local EasyEDA Pro bridge.
 
-ユーザーはチャットで設計を指示し、AIがGitHubの設計ソースを編集・検証します。ユーザーはブラウザで結果を確認し、最終的なJLCPCBへのアップロード、発注、決済だけを行います。
-
-## Current status: v0.6 browser workbench + local EasyEDA Pro Bridge — REVIEW ONLY
+## Current status: v0.7.0 — native patch workflow implemented; REVIEW ONLY
 
 [![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
 
-- [GitHub Actions](https://github.com/temesotejam/pcb-workbench/actions): engine build, KiCad checks and draft export.
-- [Web viewer](https://temesotejam.github.io/pcb-workbench/): available after the first successful Pages deployment.
-- [Pages settings](https://github.com/temesotejam/pcb-workbench/settings/pages): select GitHub Actions as Source once if not already configured.
-- [Roadmap](docs/ROADMAP.md): implementation milestones and acceptance criteria.
+- [GitHub Actions](https://github.com/temesotejam/pcb-workbench/actions): code tests, tscircuit integration coupon, KiCad checks and draft exports.
+- [Web viewer](https://temesotejam.github.io/pcb-workbench/): static preview; deployment requires GitHub Pages to be enabled once.
+- [Pages settings](https://github.com/temesotejam/pcb-workbench/settings/pages): choose **GitHub Actions** as the source.
+- [Roadmap](docs/ROADMAP.md): implementation status and release gates.
+
+### What is implemented
+
+- Import the verified NUCLEO handoff ZIP in the browser. The adapter strips its single archive root folder, selects only the current upper/lower native project sources and checks the manifest SHA-256 values. The original ZIP and native project files are not committed to this public repository.
+- Select the upper or lower project, connect to the existing EasyEDA Pro API Gateway / Bridge Server on localhost ports 49620–49629, select an EasyEDA window and attach to the matching native board.
+- Run fresh PCB DRC and linked schematic ERC/DRC through the official EasyEDA Pro API.
+- Export native Gerber, BOM, CPL, STEP and netlist where the installed API supports them. Normalize BOM/CPL columns and coordinates, check designator parity, required Gerber layers, LCSC part IDs and known THT/underside warnings.
+- Import an AI-generated, guarded JSON patch. Before writing, the local agent saves open EDA documents, checks every source file against the exact SHA-256 revision, writes only changed native files, reads them back, keeps a backup and rolls back if a write fails. A successful edit invalidates previous DRC and manufacturing output; rerun checks.
+- The local web server binds only to \`127.0.0.1\`. No public tunnel, order API or payment automation.
+
+### Important limits
+
+- This ChatGPT cloud conversation cannot directly connect to a service running on your PC's \`localhost\`. ChatGPT can prepare the patch JSON; you load it into the local browser workbench. The local agent then applies it to the open EasyEDA project. A fully hands-free chat-to-PC connection would require a separately installed local MCP/connector or trusted relay.
+- The GitHub Actions green build verifies the generic integration coupon and software pipeline, **not** the actual NUCLEO upper/lower boards. The original handoff contains earlier board-specific verification reports, but a fresh check must be run against the user's currently open EasyEDA project.
+- EasyEDA Pro manufacture-data APIs are documented as beta preview APIs. Generated bundles are **REVIEW ONLY**, never automatically marked order-ready.
+- JLCPCB stock, exact part identity, Basic/Extended status, THT process, CN7/CN10 underside orientation, footprint/pin mapping, centroid/rotation, board outline, drill files and upload preview must be confirmed in JLCPCB before ordering.
+- The local Bridge integration and native file write are covered by code/unit tests but have not yet been exercised against the user's live Windows EasyEDA session in this cloud run.
+
+## Start the local workbench (Windows)
+
+1. Start EasyEDA Pro and its existing API Gateway / Bridge Server. Open the intended NUCLEO project in the EDA window.
+2. Clone this repository and run \`start-workbench.ps1\` from PowerShell.
+3. In the browser, import \`NUCLEO-F401RE_Design_Handoff_2026-11-25.zip\`.
+4. Open **設計編集・出力**, connect to the Bridge, select the correct EasyEDA window and attach to the selected board.
+5. Run ERC/DRC. Apply a guarded AI patch only after confirming the active project/revision. Rerun ERC/DRC and generate a review-only export after each edit.
+
+Requirements: Windows, Node.js 20+, npm, EasyEDA Pro desktop and the already-installed API Gateway / Bridge Server. The launcher installs npm dependencies when missing and serves the UI at \`http://127.0.0.1:8787/handoff.html\`. Close the separate Node server console to stop it.
 
 ## JLCPCB-first parts
 
-See [the parts policy](docs/PARTS.md). Register and verify actual JLCPCB C-numbers before designing. The browser exposes registered parts and an explicitly labeled external search. The current coupon uses C17414; the actual import, stock, datasheet and rotation require verification.
-
-## Design pipeline
-
-1. Edit a project's `design.tsx` (tscircuit) and `project.json` (metadata and curated assembly part list).
-2. Generate Circuit JSON, schematic and PCB SVG, and native KiCad files.
-3. Use KiCad CLI for independent ERC, DRC including schematic parity, and real manufacturing exports.
-4. Convert KiCad placements to JLCPCB CSV headers, check exact designator parity and flag unverified part/rotation data.
-5. Inspect reports in the browser. Draft manufacturing files are available only in the DRAFT Actions artifact, never published as order-ready files.
-
-## Development
-
-The browser is the design workspace. The browser is the design workspace. The local agent connects to the already-installed EasyEDA Pro API Gateway / Bridge Server by scanning ports 49620–49629. Run `start-workbench.ps1` on Windows to launch a loopback-only web UI; keep EasyEDA Pro and its Bridge Server running. Attach the open NUCLEO project, then run official ERC/DRC and export a review-only manufacturing package. No public tunnel or order automation. GitHub Actions builds/tests the public UI; private design files stay on the user's PC. For optional local development with Bun, Python 3 and KiCad 10:
-
-```sh
-bun install
-python3 -m unittest discover -s tests -v
-bun run build
-python3 scripts/fabricate.py dist
-python3 -m http.server 8000 --directory dist
-```
+See [the parts policy](docs/PARTS.md). Use exact LCSC C-numbers and verify current stock, package/footprint, manufacturer part number and assembly capability. Never infer inventory or substitute parts silently.
 
 ## Release contract
 
-- Schematic first, PCB second; every populated part must be identified by an exact LCSC part number and reviewed against its datasheet and JLCPCB assembly availability.
-- Gerber ZIP with appropriate drill files, BOM CSV and CPL CSV must be generated from the same reviewed revision.
-- Review actual part centroid, side, rotation, footprint/pin mapping, electrical behavior, manufacturing constraints and assembly eligibility. Never equate a passing DRC with manufacturing approval.
-- Validate real files in JLCPCB's upload/preview flow before calling them order-ready.
-- Preserve Git history. This is a public repository; do not publish sensitive designs or credentials.
-- Production release is intentionally disabled until the required reviews and tests are implemented. No order or payment automation.
+- Schematic-first; all populated components have an exact manufacturer and LCSC identity.
+- Gerber ZIP, drill, BOM and CPL are generated from the same reviewed native project revision.
+- Check schematic-to-PCB netlist parity, pads, pin mapping, footprint, board outline, stackup, copper clearances, THT/SMT assembly side and centroid/rotation.
+- Verify JLCPCB's actual upload/preview, stock and assembly eligibility.
+- User places the order and pays manually. No production release until engineering and manufacturing reviews pass.
 
 ## References
 
+- https://prodocs.easyeda.com/en/api/guide/cli.html
+- https://prodocs.easyeda.com/en/api/reference/pro-api.html
 - https://docs.tscircuit.com/
-- https://github.com/tscircuit/circuit-json-to-kicad
 - https://docs.kicad.org/10.0/en/cli/cli.html
 - https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad
-
-## Private EasyEDA Pro handoff import
-
-Open `handoff.html` in the deployed viewer and select a supported verified two-board handoff ZIP. The archive stays in browser memory, not on GitHub or a server. The adapter checks the manifest and recorded source hashes; native placements, pad-net mappings, linked schematic part identity, BOM/CPL reference parity and coordinates. Original previews and native route inspection are available. **Read-only, not a native CAD editor or manufacturing approval.** No real project archive is committed.
-
-## Native edit workflow (v0.4)
-
-The browser imports a verified handoff, downloads exact native source and a JSON index of patchable records, accepts an AI-generated guarded JSON patch, and produces a new native ZIP without stale manufacturing files. The source is preserved. The previous revision's Gerber/BOM/CPL can be downloaded as REVIEW ONLY, with explicit assembly-side warnings. Patch support is intentionally limited to listed geometry/text fields; no automatic full reroute, netlist rewrite, or approval.
-
-`python3 scripts/easyeda_native.py path/Project.eprj3 new-output-dir --cli /path/to/easyeda-pro --step` is the private official CLI adapter. It requires a configured EasyEDA Pro v4.1.60+ runtime and headless session access. It copies the source, opens linked documents, runs strict ERC/DRC, and retrieves actual Gerber/BOM/CPL/optional STEP via official APIs. **Adapter not yet tested against an installed EasyEDA runtime.** Run only on a private authorized runner; never commit actual project data to this public repository. All outputs are review-only. Reference: https://prodocs.easyeda.com/en/api/guide/cli.html
-
-## Local EasyEDA Pro engine
-
-On Windows, run `start-workbench.ps1`. It checks the installed desktop client and Node.js, starts the web UI at `http://127.0.0.1:8787/handoff.html`, and binds the API to loopback only. Import the handoff ZIP in the browser, select a board, open **設計編集・出力**, and use the local engine controls. The server creates a working copy; it does not overwrite the original ZIP. The CLI's manufacture-data APIs are documented as beta preview APIs, so generated files are review-only and must be checked in JLCPCB's upload preview. Never expose the local agent via a public tunnel.
-
-For manual start: `npm install`, set `EASYEDA_PRO_CLI` to the installed executable, then `npm run agent`. See [EasyEDA Pro CLI guide](https://prodocs.easyeda.com/en/api/guide/cli.html).

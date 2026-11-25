@@ -1,52 +1,34 @@
 # Roadmap and acceptance tests
 
-## M0: integration coupon (this commit)
-- TypeScript source -> Circuit JSON -> schematic/PCB SVG and KiCad native source.
-- Real KiCad CLI ERC, DRC with schematic parity and native fabrication exports.
-- Exact BOM/CPL reference matching; explicit blockers for unverified parts.
-- Browser project viewer; draft export only, no production release.
+## Current: v0.7 local Bridge workbench
 
-## M1: engineering and manufacturing release
-- Check electrical limits, netlists/pin mapping against official datasheets, footprints, native KiCad symbol electrical pin types, power nets, DNP, layer stackup and copper rules. Do not trust a lossy converter as sole authority.
-- JLCPCB parts search/stock timestamp, exact MPN and LCSC number, data source, review evidence, substitutions; no fabricated inventory.
-- Implement rule profiles for actual JLCPCB Economic/Standard PCB/PCBA configurations, including via/drill/edge and assembly restrictions.
-- Establish verified centroid and rotation corrections from exact part/package, both sides and THT where supported.
-- Compare KiCad schematic netlist, PCB pads, BOM/CPL and Gerber/drill outputs, ensure complete required layers.
-- Revision-bound review approval, export bundle hash, deterministic clean generation and regression tests.
-- Validate generated files in JLCPCB upload/preview before calling release-ready. User places order manually.
-- Publish reviewed files only; keep draft manufacturing files separate.
+- Browser imports the verified two-board NUCLEO handoff ZIP, strips its archive root, verifies selected source hashes and preserves native EPRJ3/EPcb2/ESch2 data.
+- The local loopback agent discovers the user's existing EasyEDA Pro API Gateway / Bridge Server (ports 49620–49629), enumerates EDA windows and attaches to the actual native board name.
+- Fresh PCB DRC and linked schematic ERC/DRC run through the installed EasyEDA Pro API. The current project must be saved and stable before any write.
+- Guarded AI patch application: the browser calculates SHA-256 for every native source file; the local agent saves open EDA documents, validates the project directory and complete file set, rejects stale source, backs up the originals, writes only changed native files, reads them back and attempts rollback on failure.
+- A successful patch invalidates prior verification and fabrication outputs. DRC/ ERC must be rerun before new review exports.
+- BOM/CPL normalization supports comma and tab-delimited EasyEDA output, exact LCSC C-number validation, footprint and designator checks, mm coordinate normalization, and THT/underside warnings.
+- Export remains REVIEW_ONLY. EasyEDA manufacture-data APIs are beta preview. JLCPCB upload preview, live stock, PCBA eligibility, THT, orientation, electrical and physical review are required.
+- CI green means software checks and the generic integration coupon pass. It does not mean the actual NUCLEO boards pass or are ready to order.
+- ChatGPT cloud cannot directly access the local Bridge. Patch JSON is generated in chat and imported by the user in the local browser workbench. Full chat-to-PC control requires a separately installed local MCP/connector or trusted relay.
 
-## M2: richer browser experience
-- Layer visibility, pan/zoom, component selection, net highlight, 3D and STEP export, design changes and revision comparison.
-- Multiple projects, local/private deployment options; no credentials in repository.
-- First real reference project: a small reviewed board, then complex shields.
+## Remaining acceptance gates
 
-## JLCPCB-first update (v0.2)
-- Curated exact C-number library, official identity URLs, passive wrapper with JLCPCB footprint references and source/pad checks.
-- Browser library and optional external jlcsearch discovery; live results are not approved parts.
-- Next: verified full IC imports, local versioned geometry, current stock and PCBA profile checks.
+1. Run the local launcher on the user's Windows PC and confirm Bridge discovery and window selection.
+2. Attach both NUCLEO projects in turn; verify native board names and project directories resolve correctly.
+3. Run fresh ERC/DRC on the actual upper and lower boards; capture every violation and warning.
+4. Test a harmless text/position patch, verify SHA preflight, live project update, backup and rollback path.
+5. Test a controlled routing/footprint change on a copy; confirm the native EDA document reloads and the netlist remains correct.
+6. Generate Gerber/BOM/CPL from the same source revision. Independently inspect all copper, mask, paste, outline and drill files.
+7. Resolve CN7/CN10 underside THT placement and verify exact LCSC parts, MPNs, footprints, rotation, stock and JLCPCB PCBA support.
+8. Upload the draft files to JLCPCB's preview and compare their parsed layers, BOM and placement data. Only after a human review can the files be called order-ready.
+9. Enable GitHub Pages once if a hosted static preview is wanted. The local Bridge interface remains loopback-only.
 
-## v0.3 EasyEDA Pro handoff
+## Earlier milestones
 
-- Browser-local ZIP import for the verified two-board handoff layout; selected files only, source/manifest hashes, original drawings and native component/net/route inspection. No private design data published.
-- Read-only import, not arbitrary EPRJ3 import or complete conversion. Preserve unsupported primitives and source, add verified symbol/footprint/pad/net mapping and layer/pour/outline conversion before enabling editing. Implement fresh ERC/DRC, assembly-side review, and revision-bound manufacturing export.
-
-## v0.4 native edit + manufacturing review
-
-- Guarded native source patches preserve unknown records and invalidate old artifacts. Browser provides source ZIP, AI record index, patch import, original manufacturing review ZIP.
-- Official EasyEDA Pro CLI adapter (unverified with runtime); preferred over lossy KiCad conversion for V3 existing designs. Requires private runner and official client installation/activation. Strict checking and native export; no automatic orders.
-- Remaining release gates: actual native CLI run on both boards, complete CAD editing / live viewer, JLCPCB eligibility and side/rotation resolution, exact source/export parity and JLCPCB preview, physical engineering review. No claim of production completion.
-
-## v0.5 local native engine bridge
-
-- Loopback-only local web server and EasyEDA Pro desktop CLI session. The browser uploads only the selected native project files to the local agent; it stores a working copy under the configured EasyEDA project root.
-- Official API-backed board enumeration, PCB DRC detailed result + pass gate, schematic DRC per page, Gerber/BOM/CPL/STEP/netlist exports and BOM/CPL reference parity checks. All exports remain REVIEW_ONLY; stock, JLCPCB assembly class, underside/THT fit and final upload preview require manual confirmation.
-- PowerShell launcher checks EasyEDA Pro desktop CLI >=4.1.60 and Node.js >=20. The online edition is not supported for the CLI bridge.
-- Remaining: verify on the user's installed EasyEDA Pro runtime (not accessible from this cloud session), test both boards on the real client, confirm JLCPCB upload/preview and physical/electrical checks. Do not claim production release before those gates.
-
-## v0.6 reuse existing EasyEDA Pro Bridge
-
-- Local-only HTTP agent scans 49620–49629, reads `/health` and `/eda-windows`, attaches to the active EasyEDA Pro window and executes official EDA API code through `/execute`.
-- Browser UI now attaches to the user's open NUCLEO board, runs PCB + all linked schematic ERC/DRC, exports Gerber/BOM/CPL/STEP/netlist and normalizes JLCPCB review files. All exports remain REVIEW_ONLY; actual JLCPCB preview, stock and THT/side review are mandatory.
-- No separate EasyEDA Pro CLI installation required. The user's existing API Gateway / Bridge Server is reused.
-- Remaining: verify the exact installed Bridge Server endpoint/response shape and run both boards against the user's desktop session; native AI edit commands still need direct API or verified project-file write support.
+- M0 integration coupon: tscircuit source, KiCad generation, independent KiCad CLI checks and draft manufacturing exports.
+- v0.2 JLCPCB-first curated part library and C-number identity policy.
+- v0.3 verified EasyEDA handoff import and native inspection.
+- v0.4 guarded native record patch prototype and review-only manufacturing export.
+- v0.5 CLI bridge prototype (superseded by reuse of the user's existing API Gateway / Bridge Server).
+- v0.6 local Bridge discovery, board attachment, DRC and manufacturing export.
