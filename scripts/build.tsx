@@ -37,6 +37,72 @@ function replaceSexprBlocks(source:string,token:string,transform:(block:string)=
   return source
 }
 function quoteKicad(s:string){return s.replace(/\\/g,"\\\\").replace(/"/g,'\\"')}
+function snapLabelsAndWiresToSymbolPins(source:string){
+  const pinBySymbolUnit=new Map<string,{x:number,y:number}[]>()
+  for(const libBlock of sexprBlocks(source,"(lib_symbols")){
+    for(const root of sexprBlocks(libBlock.text,"(symbol")){
+      const libId=root.text.match(/^\(symbol\s+"([^"]+)"/)?.[1]
+      if(!libId)continue
+      const nestedStart=root.text.indexOf("\n")+1
+      for(const child of sexprBlocks(root.text.slice(nestedStart),"(symbol")){
+        const childName=child.text.match(/^\(symbol\s+"([^"]+)"/)?.[1]
+        const suffix=childName?.match(/_(\d+)_(\d+)$/)
+        if(!suffix)continue
+        const unit=Number(suffix[1])
+        for(const pin of sexprBlocks(child.text,"(pin ")){
+          const at=pin.text.match(/\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\)/)
+          const number=pin.text.match(/\(number\s+"([^"]+)"/)?.[1]
+          if(!at||!number)continue
+          const key=libId+"|"+unit
+          if(!pinBySymbolUnit.has(key))pinBySymbolUnit.set(key,[])
+          pinBySymbolUnit.get(key)!.push({x:Number(at[1]),y:Number(at[2]),number:Number(number)})
+        }
+      }
+    }
+  }
+  const labels=sexprBlocks(source,"(label").flatMap(block=>{
+    const at=block.text.match(/^\(label\s+"([^"]+)"[\s\S]*?\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/)
+    return at?[{name:at[1],x:Number(at[2]),y:Number(at[3])}]:[]
+  })
+  const replacements=new Map<string,{x:number,y:number}>()
+  for(const instance of sexprBlocks(source,"(symbol")){
+    const libId=instance.text.match(/\(lib_id\s+"([^"]+)"/)?.[1]
+    if(!libId)continue
+    const at=instance.text.match(/\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/)
+    const unit=Number(instance.text.match(/\(unit\s+(\d+)\)/)?.[1]??0)
+    if(!at)continue
+    const originX=Number(at[1]),originY=Number(at[2]),angle=Number(at[3])*Math.PI/180
+    const pins=pinBySymbolUnit.get(libId+"|"+unit)??[]
+    for(const pin of pins){
+      const x=originX+pin.x*Math.cos(angle)-pin.y*Math.sin(angle)
+      const y=originY-(pin.x*Math.sin(angle)+pin.y*Math.cos(angle))
+      const candidates=labels.filter(label=>{
+        const dx=Math.abs(label.x-x),dy=Math.abs(label.y-y)
+        return (dx<=2.55&&dy<=0.01)||(dy<=2.55&&dx<=0.01)
+      })
+      if(candidates.length!==1)continue
+      const old=candidates[0],key=old.x.toFixed(5)+","+old.y.toFixed(5)
+      const prior=replacements.get(key)
+      if(prior&&(Math.abs(prior.x-x)>0.01||Math.abs(prior.y-y)>0.01))continue
+      replacements.set(key,{x,y})
+    }
+  }
+  if(!replacements.size)return {content:source,snapped:0}
+  const format=(v:number)=>Number(v.toFixed(6)).toString()
+  const move=(x:number,y:number)=>{
+    const target=replacements.get(x.toFixed(5)+","+y.toFixed(5))
+    return target?{x:target.x,y:target.y}:null
+  }
+  let content=replaceSexprBlocks(source,"(label",block=>block.replace(/\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/,(all,x,y)=>{
+    const target=move(Number(x),Number(y))
+    return target?"(at "+format(target.x)+" "+format(target.y):all
+  }))
+  content=replaceSexprBlocks(content,"(wire",block=>block.replace(/\(xy\s+(-?[\d.]+)\s+(-?[\d.]+)\)/g,(all,x,y)=>{
+    const target=move(Number(x),Number(y))
+    return target?"(xy "+format(target.x)+" "+format(target.y)+")":all
+  }))
+  return {content,snapped:replacements.size}
+}
 function snapWireEndsToLabels(source:string,names:Set<string>){
   const labels=sexprBlocks(source,"(label").flatMap(b=>{
     const name=b.text.match(/^\(label\s+"([^"]+)"/)?.[1],at=b.text.match(/\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/)
@@ -110,6 +176,7 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
       if(!footprint)return block
       return block.replace(/\(property "Footprint" ""/,'(property "Footprint" "'+quoteKicad(footprint)+'"')
     })
+    content=snapLabelsAndWiresToSymbolPins(content).content
     content=snapWireEndsToLabels(content,new Set(netNames)).content
     return {...file,content}
   })
