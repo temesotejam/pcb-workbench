@@ -22,7 +22,7 @@ export function checkBomCpl(bomText,cplText){
   if(Number.isFinite(qty)&&qty!==refs.length)blockers.push("BOM quantity mismatch for "+raw)
   bRefs.push(...refs)
   const part=String(row["LCSC Part #"]??row["Supplier Part"]??"").trim()
-  if(!/^C\\d+$/i.test(part))blockers.push("Missing or invalid LCSC part number for "+raw+": "+part)
+  if(!/^C\d+$/i.test(part))blockers.push("Missing or invalid LCSC part number for "+raw+": "+part)
   const comment=String(row.Comment??row["Manufacturer Part"]??row.Device??row.Value??"").trim()
   const footprint=String(row.Footprint??"").trim()
   if(!footprint)blockers.push("Missing footprint for "+raw)
