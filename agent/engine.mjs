@@ -60,13 +60,15 @@ export function parseCsv(text){
 export function validateProjectFiles(input){const entries=Object.create(null);let totalBytes=0;if(Object.keys(input).length>2000)throw new Error('Too many project files');for(const [rawName,data] of Object.entries(input)){const name=rawName.replace(/\\/g,"/");if(!name||name.startsWith("/")||/^[A-Za-z]:/.test(name)||name.split("/").some(x=>x===".."||x==="."||!x))throw new Error("Unsafe project path: "+rawName);if(!/\.(eprj3|epcb2|esch2|ecfg|evar|epan2)$/i.test(name))throw new Error("Unsupported file in native project package: "+name);if(entries[name])throw new Error("Duplicate project path: "+name);const bytes=data instanceof Uint8Array?data:new Uint8Array(data);if(bytes.byteLength>64*1024*1024)throw new Error('Project file exceeds 64 MiB: '+name);totalBytes+=bytes.byteLength;if(totalBytes>220*1024*1024)throw new Error('Project exceeds 220 MiB');entries[name]=bytes}const projects=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".eprj3"));if(projects.length!==1||projects[0].includes("/"))throw new Error("Package must contain exactly one root-level .eprj3 project file");const projectName=path.basename(projects[0],".eprj3"),pcb=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".epcb2")),sch=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".esch2"));if(!pcb.length||!sch.length)throw new Error("Project needs at least one PCB and one schematic source");const meta=JSON.parse(new TextDecoder().decode(entries[projects[0]]));if(!meta.profile||typeof meta.profile!=="object")throw new Error("Invalid EPRJ3 project profile");return {entries,projectName,projectFile:projects[0]}}
 export function checkBomCpl(bomText,cplText,options={}){
  const bom=parseCsv(bomText),cpl=parseCsv(cplText),blockers=[],warnings=[],bRefs=[],cRefs=[]
+ if(!bom.length)blockers.push("BOM is empty")
+ if(!cpl.length)blockers.push("CPL is empty")
  const numeric=v=>Number(String(v??"").trim().replace(/mm$/i,"")),expectedSideByRef=options.expectedSideByRef??{}
  const bomNormalized=[]
  for(const row of bom){
   const raw=row.Designator??row["Designator(s)"]??"",refs=String(raw).split(",").map(x=>x.trim()).filter(Boolean)
   if(!refs.length)blockers.push("BOM row has no designator")
   const qty=Number(row.Quantity)
-  if(Number.isFinite(qty)&&qty!==refs.length)blockers.push("BOM quantity mismatch for "+raw)
+  if(Number.isFinite(qty)&&(qty<=0||!Number.isInteger(qty)||qty!==refs.length))blockers.push("BOM quantity mismatch for "+raw)
   bRefs.push(...refs)
   const part=String(row["LCSC Part #"]??row["Supplier Part"]??"").trim()
   if(!/^C\d+$/i.test(part))blockers.push("Missing or invalid LCSC part number for "+raw+": "+part)
