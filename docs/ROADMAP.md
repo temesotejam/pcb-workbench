@@ -30,3 +30,9 @@
 
 - Browser-local ZIP import for the verified two-board handoff layout; selected files only, source/manifest hashes, original drawings and native component/net/route inspection. No private design data published.
 - Read-only import, not arbitrary EPRJ3 import or complete conversion. Preserve unsupported primitives and source, add verified symbol/footprint/pad/net mapping and layer/pour/outline conversion before enabling editing. Implement fresh ERC/DRC, assembly-side review, and revision-bound manufacturing export.
+
+## v0.4 native edit + manufacturing review
+
+- Guarded native source patches preserve unknown records and invalidate old artifacts. Browser provides source ZIP, AI record index, patch import, original manufacturing review ZIP.
+- Official EasyEDA Pro CLI adapter (unverified with runtime); preferred over lossy KiCad conversion for V3 existing designs. Requires private runner and official client installation/activation. Strict checking and native export; no automatic orders.
+- Remaining release gates: actual native CLI run on both boards, complete CAD editing / live viewer, JLCPCB eligibility and side/rotation resolution, exact source/export parity and JLCPCB preview, physical engineering review. No claim of production completion.

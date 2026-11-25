@@ -4,7 +4,7 @@ AI-operated, browser-based PCB design and manufacturing workspace for JLCPCB.
 
 ユーザーはチャットで設計を指示し、AIがGitHubの設計ソースを編集・検証します。ユーザーはブラウザで結果を確認し、最終的なJLCPCBへのアップロード、発注、決済だけを行います。
 
-## Current status: v0.3 JLCPCB-first design + private EasyEDA handoff viewer — NOT READY FOR ORDER
+## Current status: v0.4 private native project patches and manufacturing review — NOT READY FOR ORDER
 
 [![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
 
@@ -56,3 +56,9 @@ python3 -m http.server 8000 --directory dist
 ## Private EasyEDA Pro handoff import
 
 Open `handoff.html` in the deployed viewer and select a supported verified two-board handoff ZIP. The archive stays in browser memory, not on GitHub or a server. The adapter checks the manifest and recorded source hashes; native placements, pad-net mappings, linked schematic part identity, BOM/CPL reference parity and coordinates. Original previews and native route inspection are available. **Read-only, not a native CAD editor or manufacturing approval.** No real project archive is committed.
+
+## Native edit workflow (v0.4)
+
+The browser imports a verified handoff, downloads exact native source and a JSON index of patchable records, accepts an AI-generated guarded JSON patch, and produces a new native ZIP without stale manufacturing files. The source is preserved. The previous revision's Gerber/BOM/CPL can be downloaded as REVIEW ONLY, with explicit assembly-side warnings. Patch support is intentionally limited to listed geometry/text fields; no automatic full reroute, netlist rewrite, or approval.
+
+`python3 scripts/easyeda_native.py path/Project.eprj3 new-output-dir --cli /path/to/easyeda-pro --step` is the private official CLI adapter. It requires a configured EasyEDA Pro v4.1.60+ runtime and headless session access. It copies the source, opens linked documents, runs strict ERC/DRC, and retrieves actual Gerber/BOM/CPL/optional STEP via official APIs. **Adapter not yet tested against an installed EasyEDA runtime.** Run only on a private authorized runner; never commit actual project data to this public repository. All outputs are review-only. Reference: https://prodocs.easyeda.com/en/api/guide/cli.html
