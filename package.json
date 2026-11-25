@@ -1,6 +1,6 @@
 {
   "name": "pcb-workbench",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "circuit-to-svg": "0.0.463",
     "react": "19.1.0",
     "polygon-clipping": "0.15.7",
-    "easyeda": "0.0.392"
+    "easyeda": "0.0.392",
+    "fflate": "0.8.2"
   }
 }

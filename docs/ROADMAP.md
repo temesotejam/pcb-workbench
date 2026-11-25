@@ -25,3 +25,8 @@
 - Curated exact C-number library, official identity URLs, passive wrapper with JLCPCB footprint references and source/pad checks.
 - Browser library and optional external jlcsearch discovery; live results are not approved parts.
 - Next: verified full IC imports, local versioned geometry, current stock and PCBA profile checks.
+
+## v0.3 EasyEDA Pro handoff
+
+- Browser-local ZIP import for the verified two-board handoff layout; selected files only, source/manifest hashes, original drawings and native component/net/route inspection. No private design data published.
+- Read-only import, not arbitrary EPRJ3 import or complete conversion. Preserve unsupported primitives and source, add verified symbol/footprint/pad/net mapping and layer/pour/outline conversion before enabling editing. Implement fresh ERC/DRC, assembly-side review, and revision-bound manufacturing export.

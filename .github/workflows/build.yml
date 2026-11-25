@@ -20,7 +20,7 @@ jobs:
       - name: Install circuit engine
         run: bun install
       - name: Catalog integrity tests
-        run: bun test library/catalog.test.ts
+        run: bun test library/catalog.test.ts library/handoff-core.test.ts
       - name: Generate circuit and KiCad sources
         run: bun run build
       - name: Install official KiCad 10 stable packages

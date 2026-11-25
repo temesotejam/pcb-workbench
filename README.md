@@ -4,7 +4,7 @@ AI-operated, browser-based PCB design and manufacturing workspace for JLCPCB.
 
 ユーザーはチャットで設計を指示し、AIがGitHubの設計ソースを編集・検証します。ユーザーはブラウザで結果を確認し、最終的なJLCPCBへのアップロード、発注、決済だけを行います。
 
-## Current status: v0.2 JLCPCB-first integration coupon — NOT READY FOR ORDER
+## Current status: v0.3 JLCPCB-first design + private EasyEDA handoff viewer — NOT READY FOR ORDER
 
 [![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
 
@@ -52,3 +52,7 @@ python3 -m http.server 8000 --directory dist
 - https://github.com/tscircuit/circuit-json-to-kicad
 - https://docs.kicad.org/10.0/en/cli/cli.html
 - https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad
+
+## Private EasyEDA Pro handoff import
+
+Open `handoff.html` in the deployed viewer and select a supported verified two-board handoff ZIP. The archive stays in browser memory, not on GitHub or a server. The adapter checks the manifest and recorded source hashes; native placements, pad-net mappings, linked schematic part identity, BOM/CPL reference parity and coordinates. Original previews and native route inspection are available. **Read-only, not a native CAD editor or manufacturing approval.** No real project archive is committed.

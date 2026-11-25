@@ -11,6 +11,9 @@ const out = resolve(root, "dist")
 await rm(out, { recursive: true, force: true })
 await mkdir(out, { recursive: true })
 await cp(resolve(root, "site"), out, { recursive: true })
+const handoff = await Bun.build({entrypoints:[resolve(root,"site/handoff-entry.js")],target:"browser",outdir:out,naming:"handoff.js",minify:true})
+if(!handoff.success) throw new Error(handoff.logs.map(String).join("\n"))
+await rm(resolve(out,"handoff-entry.js"))
 await cp(resolve(root, "library", "catalog.json"), resolve(out,"catalog.json"))
 const index = []
 let failed = false
