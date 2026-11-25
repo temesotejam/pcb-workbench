@@ -68,6 +68,7 @@ function snapLabelsAndWiresToSymbolPins(source:string){
     return pts.length===2?[{a:{x:Number(pts[0][1]),y:Number(pts[0][2])},b:{x:Number(pts[1][1]),y:Number(pts[1][2])}}]:[]
   })
   const replacements=new Map<string,{pin:{x:number,y:number},label:{x:number,y:number}}>()
+  const moveDetails:{name:string,from:{x:number,y:number},pin:{x:number,y:number},to:{x:number,y:number},connectedWireCount:number}[]=[]
   for(const instance of sexprBlocks(source,"(symbol")){
     const libId=instance.text.match(/\(lib_id\s+"([^"]+)"/)?.[1]
     if(!libId)continue
@@ -97,6 +98,7 @@ function snapLabelsAndWiresToSymbolPins(source:string){
         labelTarget=Math.abs(w.a.x-old.x)<=0.01&&Math.abs(w.a.y-old.y)<=0.01?w.b:w.a
       }
       replacements.set(key,{pin:{x,y},label:labelTarget})
+      moveDetails.push({name:old.name,from:{x:old.x,y:old.y},pin:{x,y},to:labelTarget,connectedWireCount:connected.length})
     }
   }
   if(!replacements.size)return {content:source,snapped:0}
@@ -109,7 +111,7 @@ function snapLabelsAndWiresToSymbolPins(source:string){
     const target=replacements.get(Number(x).toFixed(5)+","+Number(y).toFixed(5))?.pin
     return target?"(xy "+format(target.x)+" "+format(target.y)+")":all
   }))
-  return {content,snapped:replacements.size}
+  return {content,snapped:replacements.size,moves:moveDetails}
 }
 
 function snapWireEndsToLabels(source:string,names:Set<string>){
@@ -190,7 +192,8 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
     content=pinSnap.content
     const netSnap=snapWireEndsToLabels(content,new Set(netNames))
     content=netSnap.content
-    schematicFixes.push({filename:file.filename,pinLabelMoves:pinSnap.snapped,netWireSnaps:netSnap.snapped})
+    const finalLabels=sexprBlocks(content,"(label").flatMap(block=>{const m=block.text.match(/^\(label\s+"([^"]+)"[\s\S]*?\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/);return m&&m[1].startsWith("R1_R2_PIN")?[{name:m[1],x:Number(m[2]),y:Number(m[3])}]:[]})
+    schematicFixes.push({filename:file.filename,pinLabelMoves:pinSnap.snapped,netWireSnaps:netSnap.snapped,moves:pinSnap.moves,finalLabels})
     return {...file,content}
   })
   const patchedPcb=replaceSexprBlocks(pcbText,"(footprint",block=>{
