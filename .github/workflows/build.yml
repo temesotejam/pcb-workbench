@@ -15,12 +15,14 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.0'
-      - name: Unit tests
-        run: python3 -m unittest discover -s tests -v && node --test agent/engine.test.mjs && node --check agent/server.mjs && node --check agent/engine.mjs
+      - name: Python unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Check local agent syntax
+        run: node --check agent/server.mjs && node --check agent/engine.mjs
       - name: Install circuit engine
         run: bun install
-      - name: Catalog integrity tests
-        run: bun test library/catalog.test.ts library/handoff-core.test.ts library/native-patch.test.ts
+      - name: Catalog and local agent tests
+        run: bun test library/catalog.test.ts library/handoff-core.test.ts && node --test agent/engine.test.mjs library/native-patch.test.ts
       - name: Generate circuit and KiCad sources
         run: bun run build
       - name: Install official KiCad 10 stable packages

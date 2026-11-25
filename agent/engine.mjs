@@ -11,7 +11,45 @@ export function parseVersion(text){const m=String(text).match(/EasyEDA Pro\s+(\d
 export function versionAtLeast(v,min=[4,1,70]){if(!v)return false;for(let i=0;i<3;i++){if(v[i]>min[i])return true;if(v[i]<min[i])return false}return true}
 export function parseCsv(text){const s=String(text).replace(/^\uFEFF/,""),rows=[];let row=[],cell="",quoted=false;for(let i=0;i<s.length;i++){const c=s[i];if(quoted){if(c==='"'&&s[i+1]==='"'){cell+='"';i++}else if(c==='"')quoted=false;else cell+=c}else if(c==='"'&&cell==="")quoted=true;else if(c===","){row.push(cell);cell=""}else if(c==="\n"){row.push(cell.replace(/\r$/,""));if(row.some(x=>x!==""))rows.push(row);row=[];cell=""}else cell+=c}if(quoted)throw new Error("Unclosed CSV quote");if(row.length||cell){row.push(cell.replace(/\r$/,""));if(row.some(x=>x!==""))rows.push(row)}if(!rows.length)return [];const headers=rows.shift().map(x=>x.trim());if(new Set(headers).size!==headers.length)throw new Error("Duplicate CSV headers");return rows.map(v=>{if(v.length!==headers.length)throw new Error("CSV column count mismatch");return Object.fromEntries(headers.map((h,i)=>[h,v[i]]))})}
 export function validateProjectFiles(input){const entries=Object.create(null);for(const [rawName,data] of Object.entries(input)){const name=rawName.replace(/\\/g,"/");if(!name||name.startsWith("/")||/^[A-Za-z]:/.test(name)||name.split("/").some(x=>x===".."||x==="."||!x))throw new Error("Unsafe project path: "+rawName);if(!/\.(eprj3|epcb2|esch2|ecfg|evar|epan2)$/i.test(name))throw new Error("Unsupported file in native project package: "+name);if(entries[name])throw new Error("Duplicate project path: "+name);entries[name]=data instanceof Uint8Array?data:new Uint8Array(data)}const projects=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".eprj3"));if(projects.length!==1||projects[0].includes("/"))throw new Error("Package must contain exactly one root-level .eprj3 project file");const projectName=path.basename(projects[0],".eprj3"),pcb=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".epcb2")),sch=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".esch2"));if(!pcb.length||!sch.length)throw new Error("Project needs at least one PCB and one schematic source");const meta=JSON.parse(new TextDecoder().decode(entries[projects[0]]));if(!meta.profile||typeof meta.profile!=="object")throw new Error("Invalid EPRJ3 project profile");return {entries,projectName,projectFile:projects[0]}}
-export function checkBomCpl(bomText,cplText){const bom=parseCsv(bomText),cpl=parseCsv(cplText),blockers=[],warnings=[],bRefs=[],cRefs=[];for(const row of bom){const raw=row.Designator??row["Designator(s)"]??"",refs=String(raw).split(",").map(x=>x.trim()).filter(Boolean);if(!refs.length)blockers.push("BOM row has no designator");const qty=Number(row.Quantity);if(Number.isFinite(qty)&&qty!==refs.length)blockers.push("BOM quantity mismatch for "+raw);bRefs.push(...refs);const supplier=String(row.Supplier??"").toLowerCase(),part=String(row["Supplier Part"]??row["LCSC Part #"]??"");if(supplier.includes("lcsc")&&!/^C\d+$/i.test(part))blockers.push("Invalid LCSC part number for "+raw+": "+part);if(!supplier.includes("lcsc"))warnings.push("Supplier is not explicitly LCSC for "+raw)}for(const row of cpl){const ref=String(row.Designator??"").trim();if(!ref)blockers.push("CPL row has no designator");else cRefs.push(ref);const layer=String(row.Layer??"").toLowerCase();if(!["top","bottom","t","b","front","back"].includes(layer))blockers.push("Unknown CPL layer for "+ref+": "+layer);for(const field of ["Mid X","Mid Y","Rotation"])if(!Number.isFinite(Number(row[field])))blockers.push("Invalid CPL "+field+" for "+ref)}const dup=xs=>xs.filter((v,i)=>xs.indexOf(v)!==i);if(dup(bRefs).length)blockers.push("Duplicate BOM designators: "+[...new Set(dup(bRefs))].join(", "));if(dup(cRefs).length)blockers.push("Duplicate CPL designators: "+[...new Set(dup(cRefs))].join(", "));const bs=new Set(bRefs),cs=new Set(cRefs),missing=[...bs].filter(x=>!cs.has(x)),extra=[...cs].filter(x=>!bs.has(x));if(missing.length)blockers.push("Missing from CPL: "+missing.join(", "));if(extra.length)blockers.push("CPL references not in BOM: "+extra.join(", "));return {bomRows:bom.length,cplRows:cpl.length,bomReferences:bRefs.length,cplReferences:cRefs.length,referenceParity:!blockers.length,blockers,warnings}}
+export function checkBomCpl(bomText,cplText){
+ const bom=parseCsv(bomText),cpl=parseCsv(cplText),blockers=[],warnings=[],bRefs=[],cRefs=[]
+ const numeric=v=>Number(String(v??"").trim().replace(/mm$/i,""))
+ const bomNormalized=[]
+ for(const row of bom){
+  const raw=row.Designator??row["Designator(s)"]??"",refs=String(raw).split(",").map(x=>x.trim()).filter(Boolean)
+  if(!refs.length)blockers.push("BOM row has no designator")
+  const qty=Number(row.Quantity)
+  if(Number.isFinite(qty)&&qty!==refs.length)blockers.push("BOM quantity mismatch for "+raw)
+  bRefs.push(...refs)
+  const part=String(row["LCSC Part #"]??row["Supplier Part"]??"").trim()
+  if(!/^C\\d+$/i.test(part))blockers.push("Missing or invalid LCSC part number for "+raw+": "+part)
+  const comment=String(row.Comment??row["Manufacturer Part"]??row.Device??row.Value??"").trim()
+  const footprint=String(row.Footprint??"").trim()
+  if(!footprint)blockers.push("Missing footprint for "+raw)
+  bomNormalized.push({Comment:comment,Designator:refs.join(","),Footprint:footprint,"LCSC Part #":part,Quantity:String(Number.isFinite(qty)?qty:refs.length)})
+ }
+ const cplNormalized=[]
+ for(const row of cpl){
+  const ref=String(row.Designator??"").trim()
+  if(!ref)blockers.push("CPL row has no designator");else cRefs.push(ref)
+  const layer=String(row.Layer??"").trim().toLowerCase()
+  if(!["top","bottom","t","b","front","back"].includes(layer))blockers.push("Unknown CPL layer for "+ref+": "+layer)
+  const x=numeric(row["Mid X"]),y=numeric(row["Mid Y"]),rot=numeric(row.Rotation)
+  for(const [field,value] of [["Mid X",x],["Mid Y",y],["Rotation",rot]])if(!Number.isFinite(value))blockers.push("Invalid CPL "+field+" for "+ref)
+  cplNormalized.push({Designator:ref,"Mid X":Number.isFinite(x)?x.toFixed(4):String(row["Mid X"]??""),"Mid Y":Number.isFinite(y)?y.toFixed(4):String(row["Mid Y"]??""),Layer:["bottom","b","back"].includes(layer)?"Bottom":"Top",Rotation:Number.isFinite(rot)?rot.toFixed(4):String(row.Rotation??"")})
+ }
+ const dup=xs=>xs.filter((v,i)=>xs.indexOf(v)!==i)
+ if(dup(bRefs).length)blockers.push("Duplicate BOM designators: "+[...new Set(dup(bRefs))].join(", "))
+ if(dup(cRefs).length)blockers.push("Duplicate CPL designators: "+[...new Set(dup(cRefs))].join(", "))
+ const bs=new Set(bRefs),cs=new Set(cRefs),missing=[...bs].filter(x=>!cs.has(x)),extra=[...cs].filter(x=>!bs.has(x))
+ if(missing.length)blockers.push("Missing from CPL: "+missing.join(", "))
+ if(extra.length)blockers.push("CPL references not in BOM: "+extra.join(", "))
+ return {bomRows:bom.length,cplRows:cpl.length,bomReferences:bRefs.length,cplReferences:cRefs.length,referenceParity:!blockers.length,bomNormalized,cplNormalized,blockers,warnings}
+}
+function csvString(headers,rows){
+ const cell=v=>'"'+String(v??"").replaceAll('"','""')+'"'
+ return [headers,...rows.map(r=>headers.map(h=>r[h]))].map(r=>r.map(cell).join(",")).join("\r\n")+"\r\n"
+}
 async function rawCli(exe,args,{timeout=240000,maxBuffer=128*1024*1024}={}){return await execFileAsync(exe,args,{encoding:"utf8",windowsHide:true,timeout,maxBuffer})}
 export async function runCli(exe,args,opts={}){const {stdout}=await rawCli(exe,args,opts);return parseEnvelope(stdout)}
 async function invoke(exe,session,code,args={},timeout=180000){return await runCli(exe,["invoke","--session",session,"--ext-uuid","eda","--code",code,"--args",JSON.stringify(args),"--timeout",String(timeout)],{timeout:timeout+20000,maxBuffer:192*1024*1024})}
