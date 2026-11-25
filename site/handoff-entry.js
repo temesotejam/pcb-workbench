@@ -1,5 +1,5 @@
 import {unzipSync,zipSync} from 'fflate'
-import {nativeSource,inspectSource,applyPatch,reviewFiles,hash} from '../library/native-patch.mjs'
+import {nativeSource,inspectSource,inspectNetAssignments,applyPatch,reviewFiles,hash} from '../library/native-patch.mjs'
 import {inspectHandoff,selectedPath} from '../library/handoff-core.mjs'
 const $=id=>document.getElementById(id), add=(parent,tag,text)=>{const e=document.createElement(tag);e.textContent=text??'';parent.append(e);return e}
 let entries,report,board,tab='pcb',zoom=1,generation=0,urls=[],agentToken=null,agentImport=null,agentVerification=null,dirty=false
@@ -116,6 +116,20 @@ function nativePanel(p){
  inspectButton.onclick=async()=>{try{download(JSON.stringify(await inspectSource(nativeSource(entries,board)),null,2),board.key+'-editable-records.json')}catch(e){status.textContent=e.message}}
  const lbl=add(p,'p','AI差分JSONを選択'),file=add(lbl,'input');file.type='file';file.accept='.json,application/json'
  const status=add(p,'p','原本は未変更です。')
+ const netAudit=add(p,'section','')
+ add(netAudit,'h3','PCBネット割当の整合性確認')
+ add(netAudit,'p','ネイティブPCB上の既存トラック・ビアのネット名を、引き継ぎデータのネット一覧と照合します。パッドや幾何学的な接触まで含む完全な電気接続検査ではありません。')
+ const auditButton=add(netAudit,'button','トラック・ビアのネット割当を検査')
+ const auditResult=add(netAudit,'pre','未検査')
+ auditButton.onclick=async()=>{
+  auditButton.disabled=true
+  try{
+   const result=inspectNetAssignments(nativeSource(entries,board),board.nets.map(x=>x.Net))
+   auditResult.textContent=JSON.stringify({total:result.total,assigned:result.assigned,missing:result.missing,unknown:result.unknown,knownNetCount:result.knownNetCount,complete:result.complete},null,2)
+   status.textContent=result.complete?'トラック・ビアのネット名は既知ネットと整合しています。幾何学的接続は別途確認してください。':'未割当または未知のネット名があります。詳細を確認してください。'
+  }catch(e){auditResult.textContent='検査失敗: '+e.message}
+  finally{auditButton.disabled=false}
+ }
  const editor=add(p,'section','')
  add(editor,'h3','部品の位置・角度を編集')
  add(editor,'p','PCBネイティブ座標（mil）で部品のX/Y位置と回転角を変更します。配線は自動追従しません。変更後はEasyEDAで配線・クリアランスを確認し、ERC/DRCを再実行してください。')
