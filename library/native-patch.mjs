@@ -15,8 +15,8 @@ export function records(bytes){
  for(let i=0;i<lines.length;i++){
   const line=lines[i];if(!line.trim())continue
   const s=line.indexOf('||');check(s>0,'Invalid source record')
-  const h=JSON.parse(line.slice(0,s)),body=line.slice(s+2).replace(/\r?\n$/,'');check(body.endsWith('|'),'Invalid record terminator')
-  const v=body.length===1?null:JSON.parse(body.slice(0,-1))
+  const h=JSON.parse(line.slice(0,s)),body=line.slice(s+2).replace(/\r?\n$/,'');const raw=body.endsWith('|')?body.slice(0,-1):body
+  const v=raw?JSON.parse(raw):null
   if(h.type==='DOCHEAD'){check(v&&v.docType&&v.uuid,'Missing document identity');doc={type:v.docType,uuid:v.uuid}}
   if(v!==null)items.push({i,doc,h,v})
  }
@@ -53,7 +53,7 @@ export async function applyPatch(source,patch){
   Object.assign(v,c.set)
   check(c.recordType!=='VIA'||v.viaDiameter>v.holeDiameter&&v.holeDiameter>0,'Invalid via annulus')
   const original=lines[i],end=original.endsWith('\r\n')?'\r\n':original.endsWith('\n')?'\n':''
-  lines[i]=original.slice(0,original.indexOf('||'))+'||'+JSON.stringify(v)+'|'+end
+  lines[i]=original.slice(0,original.indexOf('||'))+'||'+JSON.stringify(v)+(original.replace(/\r?\n$/,'').endsWith('|')?'|':'')+end
   output[c.path]=enc.encode(lines.join(''));log.push({path:c.path,recordId:c.recordId,before:c.expect,after:c.set})
  }
  const hashes=Object.fromEntries(await Promise.all(Object.entries(output).map(async ([p,b])=>[p,await hash(b)])))
