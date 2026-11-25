@@ -37,10 +37,11 @@ function localEnginePanel(p){
 }
 async function applyPatchText(patchText){
  const source=nativeSource(entries,board),r=await applyPatch(source,JSON.parse(patchText))
- for(const [rel,data] of Object.entries(r.source))entries[board.projectBase+rel]=data
- dirty=true;agentVerification=null
+ const patchedEntries={...entries}
+ for(const [rel,data] of Object.entries(r.source))patchedEntries[board.projectBase+rel]=data
  const patched=zipSync(r.source)
  if(agentImport){await localAgent('update',patched,true);agentImport.sourceUpdated=true}
+ entries=patchedEntries;dirty=true;agentVerification=null
  download(zipSync({...r.source,'PATCH_REPORT.json':new TextEncoder().encode(JSON.stringify(r.report,null,2))}),board.key+'-PATCHED-UNVERIFIED.zip','application/zip')
 }
 function nativePanel(p){
