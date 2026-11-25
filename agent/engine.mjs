@@ -78,14 +78,31 @@ export async function runCli(exe,args,opts={}){const {stdout}=await rawCli(exe,a
 async function invoke(exe,session,code,args={},timeout=180000){return await runCli(exe,["invoke","--session",session,"--ext-uuid","eda","--code",code,"--args",JSON.stringify(args),"--timeout",String(timeout)],{timeout:timeout+20000,maxBuffer:192*1024*1024})}
 export async function detectCli(exe){const [help,doctor]=await Promise.all([rawCli(exe,["--help"],{timeout:15000}),runCli(exe,["doctor"],{timeout:15000})]);const version=parseVersion(help.stdout+"\n"+help.stderr);return {version:version?version.map(x=>x===null?"x":x).join("."):null,versionSupported:versionAtLeast(version,[4,1,60],true),doctor}}
 async function projectRoot(exe){
- const configPath=path.join(os.homedir(),"Documents","EasyEDA-Pro","config.json")
- try{const config=JSON.parse(await readFile(configPath,"utf8"));for(const p of config.APP_PROJECT_DIR??[]){if(typeof p==="string"&&p.length){await mkdir(p,{recursive:true});await access(p);return p}}}catch{}
+ const candidates=[
+  path.join(os.homedir(),"Documents","EasyEDA-Pro","config.json"),
+  path.join(os.homedir(),"Documents","LCEDA-Pro","config.json"),
+  path.join(os.homedir(),"Documents","JLCEDA-Pro","config.json")
+ ]
+ for(const configPath of candidates){
+  try{
+   const config=JSON.parse(await readFile(configPath,"utf8"))
+   for(const p of config.APP_PROJECT_DIR??[]){
+    if(typeof p==="string"&&p.length){await mkdir(p,{recursive:true});await access(p);return p}
+   }
+  }catch{}
+ }
  const opened=await runCli(exe,["open","--headless","true"]),session=opened.sessionId
  if(!session)throw new Error("Could not open EasyEDA Pro headless session")
- try{const paths=await invoke(exe,session,"return await eda.sys_FileSystem.getProjectsPaths();");for(const p of Array.isArray(paths)?paths:[]){if(typeof p==="string"&&p.length){await mkdir(p,{recursive:true});await access(p);return p}}}catch{}
+ try{
+  const paths=await invoke(exe,session,"return await eda.sys_FileSystem.getProjectsPaths();")
+  for(const p of Array.isArray(paths)?paths:[]){
+   if(typeof p==="string"&&p.length){await mkdir(p,{recursive:true});await access(p);return p}
+  }
+ }catch{}
  finally{try{await runCli(exe,["session","close","--session",session,"--destroy"],{timeout:30000})}catch{}}
- throw new Error("No EasyEDA Pro project directory found. Check Documents/EasyEDA-Pro/config.json and APP_PROJECT_DIR.")
+ throw new Error("No EasyEDA Pro project directory found. Check Documents/EasyEDA-Pro or Documents/LCEDA-Pro config.json and APP_PROJECT_DIR.")
 }
+
 export async function importProject(exe,zipBytes){const engine=await detectCli(exe);if(!engine.versionSupported)throw new Error("EasyEDA Pro desktop CLI 4.1.60 or newer is required; detected "+(engine.version??"unknown"));const info=validateProjectFiles(unzipSync(zipBytes)),root=await projectRoot(exe),workspace=path.join(root,"PCBWorkbenchSessions",randomUUID()),projectDir=path.join(workspace,info.projectName);let sessionId=null;await mkdir(projectDir,{recursive:true});try{for(const [name,data] of Object.entries(info.entries)){const target=path.resolve(projectDir,name);if(!target.startsWith(projectDir+path.sep))throw new Error("Unsafe target path");await mkdir(path.dirname(target),{recursive:true});await writeFile(target,data,{flag:"wx"})}const projectPath=path.join(projectDir,info.projectFile),opened=await runCli(exe,["open","--path",projectPath,"--headless","true"]);sessionId=opened.sessionId;if(!sessionId)throw new Error("EasyEDA Pro did not return a project session");const inspect=await invoke(exe,sessionId,"const boards=await eda.dmt_Board.getAllBoardsInfo(); const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo(); return {version:eda.sys_Environment.getEditorCurrentVersion(),isClient:eda.sys_Environment.isClient(),isHalfOfflineMode:eda.sys_Environment.isHalfOfflineMode(),project:await eda.dmt_Project.getCurrentProjectInfo(),boards:boards.map(b=>({name:b.name,uuid:b.uuid,pcbUuid:b.pcb?.uuid??null,schematicUuid:b.schematic?.uuid??null})),pages:pages.map(p=>({name:p.name,uuid:p.uuid,parentSchematicUuid:p.parentSchematicUuid}))};");if(inspect.isClient!==true)throw new Error('EasyEDA Pro runtime is not the desktop client');const runtimeVersion=parseVersion('EasyEDA Pro '+inspect.version);if(!versionAtLeast(runtimeVersion,[4,1,60]))throw new Error('EasyEDA Pro desktop 4.1.60 or newer is required; runtime reports '+inspect.version);if(!inspect.boards?.length)throw new Error("EasyEDA opened the project but found no boards");const sourceHashes=await hashProjectDir(projectDir);return {sessionId,projectName:info.projectName,projectPath,workspace,engineVersion:inspect.version,boards:inspect.boards,pages:inspect.pages,sourceFiles:Object.keys(info.entries).length,sourcePaths:Object.keys(info.entries),sourceBytes:Object.values(info.entries).reduce((n,b)=>n+b.byteLength,0),sourceHashes}}catch(e){if(sessionId){try{await runCli(exe,["session","close","--session",sessionId,"--destroy"],{timeout:30000})}catch{}}await rm(workspace,{recursive:true,force:true});throw e}}
 export async function writeProjectFiles(zipBytes,active){
  const info=validateProjectFiles(unzipSync(zipBytes))
