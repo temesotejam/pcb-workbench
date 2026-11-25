@@ -177,6 +177,7 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
       if(desc)descriptionByRef.set(ref,desc)
     }
   }
+  const schematicFixes:{filename:string,pinLabelMoves:number,netWireSnaps:number}[]=[]
   let patchedSchematics=schematicFiles.map(file=>{
     let content=file.content
     for(const [oldId,newId] of symbolIdMap){content=content.replaceAll('"'+oldId+'"','"'+newId+'"');const oldItem=oldId.slice(oldId.indexOf(':')+1),newItem=newId.slice(newId.indexOf(':')+1);content=content.replaceAll('(symbol "'+oldItem+'_','(symbol "'+newItem+'_')}
@@ -185,8 +186,11 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
       if(!footprint)return block
       return block.replace(/\(property "Footprint" ""/,'(property "Footprint" "'+quoteKicad(footprint)+'"')
     })
-    content=snapLabelsAndWiresToSymbolPins(content).content
-    content=snapWireEndsToLabels(content,new Set(netNames)).content
+    const pinSnap=snapLabelsAndWiresToSymbolPins(content)
+    content=pinSnap.content
+    const netSnap=snapWireEndsToLabels(content,new Set(netNames))
+    content=netSnap.content
+    schematicFixes.push({filename:file.filename,pinLabelMoves:pinSnap.snapped,netWireSnaps:netSnap.snapped})
     return {...file,content}
   })
   const patchedPcb=replaceSexprBlocks(pcbText,"(footprint",block=>{
@@ -205,7 +209,7 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
   const projectPrefix="$"+"{KIPRJMOD}/"
   const symTable='(sym_lib_table\n  (lib (name "tscircuit") (type "KiCad") (uri "'+projectPrefix+'tscircuit.kicad_sym") (options "") (descr "Generated source symbols"))\n)\n'
   const fpTable='(fp_lib_table\n  (lib (name "tscircuit") (type "KiCad") (uri "'+projectPrefix+'tscircuit.pretty") (options "") (descr "Exact imported component geometry"))\n)\n'
-  return {schematicFiles:patchedSchematics,pcbText:patchedPcb,footprintLibraryFiles,symFile,symTable,fpTable}
+  return {schematicFiles:patchedSchematics,schematicFixes,pcbText:patchedPcb,footprintLibraryFiles,symFile,symTable,fpTable}
 }
 
 const root=resolve(import.meta.dir,"..")
@@ -244,6 +248,7 @@ for(const id of (await readdir(resolve(root,"projects"))).sort()){
     const schFiles=sch.getOutputFiles({schematicFilename:"board.kicad_sch"}).filter((f:any)=>/^[a-zA-Z0-9_. -]+\.kicad_sch$/.test(f.filename)).map((f:any)=>({filename:f.filename,content:f.content}))
     const pcb=new CircuitJsonToKicadPcbConverter(json);pcb.runUntilFinished()
     const prepared=prepareKicadParity(schFiles,pcb.getOutputString(),namedNets)
+    await writeFile(resolve(path,"schematic-fix-report.json"),JSON.stringify(prepared.schematicFixes,null,2));result.files.push("schematic-fix-report.json")
     for(const f of prepared.schematicFiles){await writeFile(resolve(path,f.filename),f.content);result.files.push(f.filename)}
     await writeFile(resolve(path,"board.kicad_pcb"),prepared.pcbText)
     const pro=new CircuitJsonToKicadProConverter(json,{projectName:"board",schematicFilename:"board.kicad_sch",pcbFilename:"board.kicad_pcb"});pro.runUntilFinished()
