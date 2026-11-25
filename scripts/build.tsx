@@ -89,7 +89,7 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
         const originalLib=fullName.slice(0,split),item=fullName.slice(split+1)
         const libraryItem=originalLib+"__"+item,newId="tscircuit:"+libraryItem
         symbolIdMap.set(fullName,newId)
-        const snapshot=symbolBlock.text.replace(/^\(symbol\s+"[^"]+"/,'(symbol "'+quoteKicad(libraryItem)+'"')
+        const snapshot=symbolBlock.text.replace(/^\(symbol\s+"[^"]+"/,'(symbol "'+quoteKicad(libraryItem)+'"').replaceAll('(symbol "'+quoteKicad(item)+'_','(symbol "'+quoteKicad(libraryItem)+'_')
         const prior=symbolLibraryFiles.get(libraryItem)
         if(prior&&prior!==snapshot)throw new Error("Duplicate custom symbol has different definition: "+libraryItem)
         symbolLibraryFiles.set(libraryItem,snapshot)
@@ -104,7 +104,7 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
   }
   let patchedSchematics=schematicFiles.map(file=>{
     let content=file.content
-    for(const [oldId,newId] of symbolIdMap)content=content.replaceAll('"'+oldId+'"','"'+newId+'"')
+    for(const [oldId,newId] of symbolIdMap){content=content.replaceAll('"'+oldId+'"','"'+newId+'"');const oldItem=oldId.slice(oldId.indexOf(':')+1),newItem=newId.slice(newId.indexOf(':')+1);content=content.replaceAll('(symbol "'+oldItem+'_','(symbol "'+newItem+'_')}
     content=replaceSexprBlocks(content,"(symbol",block=>{
       const ref=block.match(/\(property "Reference" "([^"]+)"/)?.[1],footprint=ref?footprintByRef.get(ref):undefined
       if(!footprint)return block

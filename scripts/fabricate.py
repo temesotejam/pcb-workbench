@@ -75,8 +75,10 @@ def process(root, meta_path):
         ["sch","erc","--severity-all","--exit-code-violations","--format","json","-o",dest/"erc.json",sch],
         ["pcb","drc","--schematic-parity","--severity-all","--exit-code-violations","--format","json","-o",dest/"drc.json",board],
     ]
+    checks_ok = True
     for cmd in checks:
         if run(cmd,log) != 0:
+            checks_ok = False
             blockers.append(cmd[1].upper() + " did not pass")
     for report in ("erc.json","drc.json"):
         if (dest/report).is_file():
@@ -116,6 +118,7 @@ def process(root, meta_path):
     # v0.1 always fails closed for manufacturing. Later releases must implement
     # revision-bound approval, part evidence, JLCPCB rule profiles and pin/net parity.
     blockers.append("Production release gate disabled in v0.1; manual JLCPCB preview and engineering review not implemented.")
+    ok = ok and checks_ok
     summary.update(status="draft" if ok else "blocked", blockers=blockers, orderReady=False)
     (dest/"validation.json").write_text(json.dumps({"blockers":blockers,"commands":log,"orderReady":False},indent=2))
     summary["files"].append("validation.json")
