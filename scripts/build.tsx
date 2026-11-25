@@ -51,11 +51,10 @@ function snapLabelsAndWiresToSymbolPins(source:string){
         const unit=Number(suffix[1])
         for(const pin of sexprBlocks(child.text,"(pin ")){
           const at=pin.text.match(/\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\)/)
-          const number=pin.text.match(/\(number\s+"([^"]+)"/)?.[1]
-          if(!at||!number)continue
+          if(!at)continue
           const key=libId+"|"+unit
           if(!pinBySymbolUnit.has(key))pinBySymbolUnit.set(key,[])
-          pinBySymbolUnit.get(key)!.push({x:Number(at[1]),y:Number(at[2]),number:Number(number)})
+          pinBySymbolUnit.get(key)!.push({x:Number(at[1]),y:Number(at[2])})
         }
       }
     }
