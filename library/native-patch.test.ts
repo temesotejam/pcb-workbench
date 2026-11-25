@@ -39,3 +39,34 @@ test('inspectSource includes component designators from native ATTR records',asy
  expect(component.uniqueId).toBe('lowerCN7')
  expect(component.fields.layerId).toBe(1)
 })
+
+test('existing PCB track net assignment is editable and invalidates fabrication',async()=>{
+ const pcb={'pcb/board.epcb2':enc.encode(
+  row({type:'DOCHEAD'},{docType:'PCB',uuid:'p'})+
+  row({type:'LINE',id:'track'},{startX:0,startY:0,endX:100,endY:0,width:10,netName:'OLD_NET'})
+ )}
+ const p={schema:'pcb-workbench-native-patch/v1',changes:[{
+  path:'pcb/board.epcb2',baseSha256:await hash(pcb['pcb/board.epcb2']),docType:'PCB',docUuid:'p',recordType:'LINE',recordId:'track',
+  expect:{netName:'OLD_NET'},set:{netName:'NEW_NET'}
+ }]}
+ const result=await applyPatch(pcb,p)
+ expect(records(result.source['pcb/board.epcb2']).items.find(x=>x.h.id==='track').v.netName).toBe('NEW_NET')
+ expect(result.report.orderReady).toBe(false)
+ expect(result.report.invalidated).toContain('DRC')
+})
+test('via net assignment is editable but rejects empty or multiline names',async()=>{
+ const pcb={'pcb/board.epcb2':enc.encode(
+  row({type:'DOCHEAD'},{docType:'PCB',uuid:'p'})+
+  row({type:'VIA',id:'via'},{centerX:0,centerY:0,viaDiameter:24,holeDiameter:12,netName:'GND'})
+ )}
+ const p={schema:'pcb-workbench-native-patch/v1',changes:[{
+  path:'pcb/board.epcb2',baseSha256:await hash(pcb['pcb/board.epcb2']),docType:'PCB',docUuid:'p',recordType:'VIA',recordId:'via',
+  expect:{netName:'GND'},set:{netName:'3V3'}
+ }]}
+ const result=await applyPatch(pcb,p)
+ expect(records(result.source['pcb/board.epcb2']).items.find(x=>x.h.id==='via').v.netName).toBe('3V3')
+ p.changes[0].set.netName=''
+ await expect(applyPatch(pcb,p)).rejects.toThrow('Invalid net name')
+ p.changes[0].set.netName='BAD\\nNET'
+ await expect(applyPatch(pcb,p)).rejects.toThrow('Invalid net name')
+})
