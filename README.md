@@ -9,7 +9,7 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [GitHub Actions](https://github.com/temesotejam/pcb-workbench/actions): code tests, tscircuit integration coupon, KiCad checks and draft exports.
 - [Web viewer](https://temesotejam.github.io/pcb-workbench/): static preview, deployed by GitHub Actions.
 - [Pages settings](https://github.com/temesotejam/pcb-workbench/settings/pages): choose **GitHub Actions** as the source.
-- [Roadmap](docs/ROADMAP.md): implementation status and release gates.
+- [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
 ### What is implemented
@@ -17,7 +17,7 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - Import the verified NUCLEO handoff ZIP in the browser. The adapter strips its single archive root folder, selects only the current upper/lower native project sources and checks the manifest SHA-256 values. The original ZIP and native project files are not committed to this public repository.
 - Select the upper or lower project, connect to the existing EasyEDA Pro API Gateway / Bridge Server on localhost ports 49620–49629, select an EasyEDA window and attach to the matching native board.
 - Run fresh PCB DRC and linked schematic ERC/DRC through the official EasyEDA Pro API. Save the full verification result as JSON to share for follow-up analysis.
-- Export native Gerber, BOM, CPL, STEP and netlist where the installed API supports them. Normalize BOM/CPL columns and coordinates, check designator parity, required Gerber layers, LCSC part IDs and known THT/underside warnings.
+- Generate a JLCPCB review ZIP from the active EasyEDA Pro project: native Gerber ZIP, normalized BOM/CPL, optional STEP/netlist, upload guide, DO_NOT_ORDER marker and a JSON manifest. The manifest binds the export to a SHA-256 native source revision, hashes every generated file (except itself), checks BOM/CPL parity and required Gerber/drill layers, and records blockers/warnings. CPL angles are normalized to 0–360 only; no mirrored-side or footprint rotation offset is guessed.
 - Import an AI-generated, guarded JSON patch. The browser exposes controlled editors for PCB component placement/rotation/side, existing track geometry/net assignment, existing via geometry/net assignment, schematic symbol placement/rotation and existing schematic wire endpoints. Net reassignment is limited in the UI to nets present in the imported board netlist. A separate audit lists unassigned or unknown track/via net names; it does not claim geometric pad connectivity. The editable-record export includes PCB component designators and unique IDs. Before writing, the local agent saves open EDA documents, checks every source file against the exact SHA-256 revision, writes only changed native files, reads them back, waits for the EDA reload and checks PCB component plus linked schematic component/wire counts. It keeps a backup and rolls back if the write or reload check fails. A successful edit invalidates previous DRC and manufacturing output; rerun checks.
 - The local web server binds only to \`127.0.0.1\`. No public tunnel, order API or payment automation.
 
