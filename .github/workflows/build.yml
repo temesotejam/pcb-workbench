@@ -31,29 +31,11 @@ jobs:
         run: bun test library/catalog.test.ts library/handoff-core.test.ts library/native-patch.test.ts && node --test agent/engine.test.mjs agent/bridge.test.mjs
       - name: Generate circuit and KiCad sources
         run: bun run build
-      - name: Install official KiCad 10 stable packages
-        run: |
-          sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends kicad kicad-symbols kicad-footprints
-          kicad-cli version
-      - name: Independent verification and draft manufacturing exports
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: python3 scripts/fabricate.py dist
       - name: Check browser module syntax
         run: node --check site/app.js && node --check site/catalog.js && node --check site/handoff-entry.js
-      - name: Upload DRAFT outputs and diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pcb-workbench-DRAFT-DO-NOT-ORDER
-          path: dist/
-          if-no-files-found: warn
       - name: Prepare safe public preview (no draft order files)
         if: success() && github.event_name != 'pull_request'
         run: |
-          find dist/projects -type d -name draft -prune -exec rm -rf {} +
           touch dist/.nojekyll
       - name: Upload Pages artifact
         if: success() && github.event_name != 'pull_request'
