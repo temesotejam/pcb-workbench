@@ -58,9 +58,9 @@ export function parseCsv(text){
  return rows.map(values=>{if(values.length!==headers.length)throw new Error("CSV column count mismatch");return Object.fromEntries(headers.map((h,i)=>[h,values[i]]))})
 }
 export function validateProjectFiles(input){const entries=Object.create(null);let totalBytes=0;if(Object.keys(input).length>2000)throw new Error('Too many project files');for(const [rawName,data] of Object.entries(input)){const name=rawName.replace(/\\/g,"/");if(!name||name.startsWith("/")||/^[A-Za-z]:/.test(name)||name.split("/").some(x=>x===".."||x==="."||!x))throw new Error("Unsafe project path: "+rawName);if(!/\.(eprj3|epcb2|esch2|ecfg|evar|epan2)$/i.test(name))throw new Error("Unsupported file in native project package: "+name);if(entries[name])throw new Error("Duplicate project path: "+name);const bytes=data instanceof Uint8Array?data:new Uint8Array(data);if(bytes.byteLength>64*1024*1024)throw new Error('Project file exceeds 64 MiB: '+name);totalBytes+=bytes.byteLength;if(totalBytes>220*1024*1024)throw new Error('Project exceeds 220 MiB');entries[name]=bytes}const projects=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".eprj3"));if(projects.length!==1||projects[0].includes("/"))throw new Error("Package must contain exactly one root-level .eprj3 project file");const projectName=path.basename(projects[0],".eprj3"),pcb=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".epcb2")),sch=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".esch2"));if(!pcb.length||!sch.length)throw new Error("Project needs at least one PCB and one schematic source");const meta=JSON.parse(new TextDecoder().decode(entries[projects[0]]));if(!meta.profile||typeof meta.profile!=="object")throw new Error("Invalid EPRJ3 project profile");return {entries,projectName,projectFile:projects[0]}}
-export function checkBomCpl(bomText,cplText){
+export function checkBomCpl(bomText,cplText,options={}){
  const bom=parseCsv(bomText),cpl=parseCsv(cplText),blockers=[],warnings=[],bRefs=[],cRefs=[]
- const numeric=v=>Number(String(v??"").trim().replace(/mm$/i,""))
+ const numeric=v=>Number(String(v??"").trim().replace(/mm$/i,"")),expectedSideByRef=options.expectedSideByRef??{}
  const bomNormalized=[]
  for(const row of bom){
   const raw=row.Designator??row["Designator(s)"]??"",refs=String(raw).split(",").map(x=>x.trim()).filter(Boolean)
@@ -83,11 +83,11 @@ export function checkBomCpl(bomText,cplText){
   if(!ref)blockers.push("CPL row has no designator");else cRefs.push(ref)
   const smdRaw=String(row.SMD??"").trim().toLowerCase()
   const smd=["yes","true","1","smd"].includes(smdRaw)?"Yes":["no","false","0","tht"].includes(smdRaw)?"No":""
-  if(smd==="No")warnings.push("Through-hole assembly capability must be confirmed: "+ref)
+  if(smd==="No")warnings.push("THT part "+ref+": confirm this exact C-code is selectable for the chosen JLCPCB Standard PCBA wave-soldering/manual process.")
   if(!smd)warnings.push("SMD/THT type is not specified in CPL: "+ref)
   const layer=String(row.Layer??"").trim().toLowerCase()
   if(!["top","bottom","t","b","front","back"].includes(layer))blockers.push("Unknown CPL layer for "+ref+": "+layer)
-  if(["CN7","CN10"].includes(ref)&&["top","t","front"].includes(layer))warnings.push(ref+" is on the top side in the native CPL; verify the required underside THT orientation before PCBA.")
+  const actualSide=["bottom","b","back"].includes(layer)?"Bottom":"Top",expectedSide=expectedSideByRef[ref];if(expectedSide&&actualSide!==expectedSide)blockers.push(ref+" must be assembled on "+expectedSide+" side, but native CPL specifies "+actualSide+".")
   const x=numeric(row["Mid X"]),y=numeric(row["Mid Y"]),rot=numeric(row.Rotation)
   for(const [field,value] of [["Mid X",x],["Mid Y",y],["Rotation",rot]])if(!Number.isFinite(value))blockers.push("Invalid CPL "+field+" for "+ref)
   cplNormalized.push({Designator:ref,"Mid X":Number.isFinite(x)?x.toFixed(4):String(row["Mid X"]??""),"Mid Y":Number.isFinite(y)?y.toFixed(4):String(row["Mid Y"]??""),Layer:["bottom","b","back"].includes(layer)?"Bottom":"Top",Rotation:Number.isFinite(rot)?rot.toFixed(4):String(row.Rotation??""),SMD:smd})

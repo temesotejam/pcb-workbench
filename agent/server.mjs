@@ -62,7 +62,7 @@ async function start(){
     if(!active)return send(res,409,{error:"Attach the active EasyEDA project first"})
     const {boardName}=await jsonBody(req)
     if(boardName!==active.boardName)throw new Error("Attach the selected board before export")
-    const result=await bridgeExportBoard(active.port,active.windowId,boardName)
+    const result=await bridgeExportBoard(active.port,active.windowId,boardName,active.project?.name??active.project?.projectName??null)
     active.lastVerification=result.verification
     return send(res,200,{fileName:boardName.replace(/[^a-z0-9_-]+/gi,"_")+"_REVIEW_ONLY.zip",zipBase64:Buffer.from(result.zip).toString("base64"),manifest:result.manifest})
    }

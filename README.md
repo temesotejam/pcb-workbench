@@ -7,7 +7,7 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 [![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
 
 - [GitHub Actions](https://github.com/temesotejam/pcb-workbench/actions): code tests, tscircuit integration coupon, KiCad checks and draft exports.
-- [Web viewer](https://temesotejam.github.io/pcb-workbench/): static preview; deployment requires GitHub Pages to be enabled once.
+- [Web viewer](https://temesotejam.github.io/pcb-workbench/): static preview, deployed by GitHub Actions.
 - [Pages settings](https://github.com/temesotejam/pcb-workbench/settings/pages): choose **GitHub Actions** as the source.
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.
 
@@ -25,7 +25,7 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - This ChatGPT cloud conversation cannot directly connect to a service running on your PC's \`localhost\`. ChatGPT can prepare the patch JSON; you load it into the local browser workbench. The local agent then applies it to the open EasyEDA project. A fully hands-free chat-to-PC connection would require a separately installed local MCP/connector or trusted relay.
 - The GitHub Actions green build verifies the generic integration coupon and software pipeline, **not** the actual NUCLEO upper/lower boards. The original handoff contains earlier board-specific verification reports, but a fresh check must be run against the user's currently open EasyEDA project.
 - EasyEDA Pro manufacture-data APIs are documented as beta preview APIs. Generated bundles are **REVIEW ONLY**, never automatically marked order-ready.
-- JLCPCB stock, exact part identity, Basic/Extended status, THT process, CN7/CN10 underside orientation, footprint/pin mapping, centroid/rotation, board outline, drill files and upload preview must be confirmed in JLCPCB before ordering.
+- The supplied 2026-11-25 NUCLEO handoff archive has 1,026 manifest entries; its CRC and manifest SHA-256 values, both projects' native source hashes, BOM/CPL reference parity and all placement coordinates/rotations were independently checked. The upper board is 72 parts / 306 pins / 803 tracks with recorded DRC 0; the lower is 5 parts / 89 pins / 69 tracks with recorded ERC 0 and DRC 0. These are the handoff's existing EasyEDA checks, not a new local Bridge run.\n- The upper board's as-drawn CPL currently marks CN7/CN10 as Top, although the stack-up instructions require those connectors on the underside. The export gate now blocks this mismatch. The lower board expects CN7/CN10 on Top.\n- JLCPCB documents Standard PCBA wave-soldering/manual assembly for THT, but the exact C-code must be marked eligible in the live parts library and selected in the order. Stock, exact part identity, Basic/Extended status, THT process, footprint/pin mapping, centroid/rotation, board outline, drill files and upload preview must be confirmed before ordering.
 - The local Bridge integration and native file write are covered by code/unit tests but have not yet been exercised against the user's live Windows EasyEDA session in this cloud run.
 
 ## Start the local workbench (Windows)

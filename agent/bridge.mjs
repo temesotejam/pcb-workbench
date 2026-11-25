@@ -99,7 +99,7 @@ async function exportFiles(port,windowId,boardName){
  ].join("\n")
  return await bridgeExecute(port,windowId,code,120000)
 }
-export async function bridgeExportBoard(port,windowId,boardName){
+export async function bridgeExportBoard(port,windowId,boardName,projectName=null){
  const verification=await bridgeVerifyBoard(port,windowId,boardName)
  const result=await exportFiles(port,windowId,boardName)
  const files=Object.create(null)
@@ -115,7 +115,7 @@ export async function bridgeExportBoard(port,windowId,boardName){
  if(!verification.schematicPassed)blockers.push("Schematic ERC/DRC contains errors, unknown violations or an unavailable detailed result.")
  for(const item of verification.pcb?.warnings??[])warnings.push("PCB warning: "+(item.ruleName??item.rule??item.explanation??JSON.stringify(item)))
  for(const page of verification.schematics??[])for(const item of page.warnings??[])warnings.push("Schematic "+page.name+" warning: "+(item.rule??item.type??item.message??JSON.stringify(item)))
- const parity=checkBomCpl(new TextDecoder().decode(files["BOM.csv"]),new TextDecoder().decode(files["CPL.csv"]))
+ const expectedSideByRef=projectName==="NUCLEO-F401RE Rev1.5"?{CN7:"Bottom",CN10:"Bottom"}:projectName==="NUCLEO-F401RE Lower GPIO Proto R1"?{CN7:"Top",CN10:"Top"}:{}\n if(!Object.keys(expectedSideByRef).length)warnings.push("No board-specific assembly-side profile is registered for project "+String(projectName??"(unknown)")+".")\n const parity=checkBomCpl(new TextDecoder().decode(files["BOM.csv"]),new TextDecoder().decode(files["CPL.csv"]),{expectedSideByRef})
  blockers.push(...parity.blockers);warnings.push(...parity.warnings)
  files["BOM.csv"]=new TextEncoder().encode(csvString(["Comment","Designator","Footprint","LCSC Part #","Quantity"],parity.bomNormalized))
  files["CPL.csv"]=new TextEncoder().encode(csvString(["Designator","Mid X","Mid Y","Layer","Rotation"],parity.cplNormalized))
@@ -128,7 +128,7 @@ export async function bridgeExportBoard(port,windowId,boardName){
  warnings.push("EasyEDA Pro manufacture-data APIs are beta preview APIs; validate exported files independently.")
  warnings.push("JLCPCB stock, exact assembly eligibility, THT process, component-side orientation and final upload preview have not been confirmed.")
  warnings.push("Physical fit, electrical, thermal and safety validation remain the engineer's responsibility.")
- const manifest={schema:"pcb-workbench-bridge-export/v1",boardName,engine:"EasyEDA Pro API Gateway / Bridge Server",engineVersion:result.engineVersion,generatedAt:new Date().toISOString(),verification,parity,gerberFiles,optionalErrors:result.optionalErrors,blockers,warnings,orderReady:false,status:blockers.length?"BLOCKED":"REVIEW_ONLY"}
+ const manifest={schema:"pcb-workbench-bridge-export/v1",projectName,boardName,expectedSideByRef,engine:"EasyEDA Pro API Gateway / Bridge Server",engineVersion:result.engineVersion,generatedAt:new Date().toISOString(),verification,parity,gerberFiles,optionalErrors:result.optionalErrors,blockers,warnings,orderReady:false,status:blockers.length?"BLOCKED":"REVIEW_ONLY"}
  files["REVIEW_ONLY.json"]=new TextEncoder().encode(JSON.stringify(manifest,null,2))
  files["DO_NOT_ORDER.txt"]=new TextEncoder().encode("REVIEW ONLY — NOT APPROVED FOR ORDER.\nConfirm JLCPCB stock and assembly eligibility, BOM/CPL orientation, all DRC/physical checks and JLCPCB upload preview before ordering.\n")
  return {files,manifest,zip:zipSync(files,{level:6}),verification}

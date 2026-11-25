@@ -37,10 +37,11 @@ test("BOM and CPL reference parity is enforced",()=>{
 test("JLCPCB CSV validates millimeter coordinates and flags THT and known underside connectors",()=>{
  const bom='Quantity,Designator,Comment,Footprint,LCSC Part #\r\n1,CN7,Header,2x19,C42372543\r\n'
  const cpl='Designator,Mid X,Mid Y,Rotation,Layer,SMD\r\nCN7,1.25mm,-2.5mm,90,T,No\r\n'
- const r=checkBomCpl(bom,cpl)
- assert.equal(r.blockers.length,0)
- assert.ok(r.warnings.some(x=>x.includes("Through-hole")))
- assert.ok(r.warnings.some(x=>x.includes("CN7")))
+ const r=checkBomCpl(bom,cpl,{expectedSideByRef:{CN7:"Bottom"}})
+ assert.ok(r.blockers.some(x=>x.includes("CN7")&&x.includes("Bottom")))
+ assert.ok(r.warnings.some(x=>x.includes("THT part CN7")))
+ const bottom=checkBomCpl(bom,cpl.replace(",T,No",",B,No"),{expectedSideByRef:{CN7:"Bottom"}})
+ assert.equal(bottom.blockers.length,0)
  assert.equal(r.cplNormalized[0]["Mid X"],"1.2500")
  assert.equal(r.cplNormalized[0].Layer,"Top")
 })

@@ -7,7 +7,7 @@
 - Fresh PCB DRC and linked schematic ERC/DRC run through the installed EasyEDA Pro API. The current project must be saved and stable before any write.
 - Guarded AI patch application: the browser calculates SHA-256 for every native source file; the local agent saves open EDA documents, validates the project directory and complete file set, rejects stale source, backs up the originals, writes only changed native files, reads them back and attempts rollback on failure.
 - A successful patch invalidates prior verification and fabrication outputs. DRC/ ERC must be rerun before new review exports.
-- BOM/CPL normalization supports comma and tab-delimited EasyEDA output, exact LCSC C-number validation, footprint and designator checks, mm coordinate normalization, and THT/underside warnings.
+- BOM/CPL normalization supports comma and tab-delimited EasyEDA output, exact LCSC C-number validation, footprint and designator checks, mm coordinate normalization, and board-specific assembly-side rules (upper CN7/CN10 bottom, lower CN7/CN10 top). THT items remain gated on live JLCPCB wave-soldering eligibility.
 - Export remains REVIEW_ONLY. EasyEDA manufacture-data APIs are beta preview. JLCPCB upload preview, live stock, PCBA eligibility, THT, orientation, electrical and physical review are required.
 - CI green means software checks and the generic integration coupon pass. It does not mean the actual NUCLEO boards pass or are ready to order.
 - ChatGPT cloud cannot directly access the local Bridge. Patch JSON is generated in chat and imported by the user in the local browser workbench. Full chat-to-PC control requires a separately installed local MCP/connector or trusted relay.
@@ -21,8 +21,8 @@
 5. Test a controlled routing/footprint change on a copy; confirm the native EDA document reloads and the netlist remains correct.
 6. Generate Gerber/BOM/CPL from the same source revision. Independently inspect all copper, mask, paste, outline and drill files.
 7. Resolve CN7/CN10 underside THT placement and verify exact LCSC parts, MPNs, footprints, rotation, stock and JLCPCB PCBA support.
-8. Upload the draft files to JLCPCB's preview and compare their parsed layers, BOM and placement data. Only after a human review can the files be called order-ready.
-9. Enable GitHub Pages once if a hosted static preview is wanted. The local Bridge interface remains loopback-only.
+8. Correct the upper CN7/CN10 CPL side and validate bottom-side rotation against the JLCPCB upload preview.\n9. Upload the draft files to JLCPCB's preview and compare their parsed layers, BOM and placement data. Only after a human review can the files be called order-ready.
+10. The hosted static preview is deployed. The local Bridge interface remains loopback-only.
 
 ## Earlier milestones
 
