@@ -157,7 +157,7 @@ export async function bridgeExportBoard(port,windowId,boardName,projectName=null
 export function nativeDocumentCounts(entries){
  const result=[]
  for(const [file,bytes] of Object.entries(entries)){
-  if(!/\\.(epcb2|esch2)$/i.test(file))continue
+  if(!/\.(epcb2|esch2)$/i.test(file))continue
   const parsed=records(bytes),doc=parsed.items.find(x=>x.doc)?.doc
   if(!doc?.uuid||!doc?.type)throw new Error("Native document header missing: "+file)
   result.push({file,docType:doc.type,uuid:doc.uuid,componentCount:parsed.items.filter(x=>x.doc?.uuid===doc.uuid&&x.h.type==="COMPONENT").length,wireCount:parsed.items.filter(x=>x.doc?.uuid===doc.uuid&&x.h.type==="WIRE").length})
