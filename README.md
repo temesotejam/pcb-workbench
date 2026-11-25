@@ -6,7 +6,7 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 
 [![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
 
-- [GitHub Actions](https://github.com/temesotejam/pcb-workbench/actions): code tests, tscircuit integration coupon, KiCad checks and draft exports.
+- [GitHub Actions](https://github.com/temesotejam/pcb-workbench/actions): fast code/UI tests and GitHub Pages deployment.\n- [Manufacturing verification](https://github.com/temesotejam/pcb-workbench/actions/workflows/manufacturing.yml): targeted KiCad 10 checks and draft JLCPCB exports when design, parts or fabrication sources change.
 - [Web viewer](https://temesotejam.github.io/pcb-workbench/): static preview, deployed by GitHub Actions.
 - [Pages settings](https://github.com/temesotejam/pcb-workbench/settings/pages): choose **GitHub Actions** as the source.
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
