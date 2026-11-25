@@ -23,8 +23,8 @@ export async function hashProjectDir(dir){
  return {hashes,sourceRevision}
 }
 export function parseEnvelope(stdout){const s=String(stdout??""),a=s.indexOf("{"),b=s.lastIndexOf("}");if(a<0||b<a)throw new Error("EasyEDA CLI returned no JSON envelope");const r=JSON.parse(s.slice(a,b+1));if(r.ok!==true)throw new Error(r.error?.message||r.error?.code||"EasyEDA CLI operation failed");return r.value}
-export function parseVersion(text){const m=String(text).match(/EasyEDA Pro\s+(\d+)\.(\d+)\.(\d+)/i);return m?m.slice(1).map(Number):null}
-export function versionAtLeast(v,min=[4,1,70]){if(!v)return false;for(let i=0;i<3;i++){if(v[i]>min[i])return true;if(v[i]<min[i])return false}return true}
+export function parseVersion(text){const m=String(text).match(/EasyEDA Pro\\s+(\\d+)\\.(\\d+)\\.(\\d+|x)/i);return m?[Number(m[1]),Number(m[2]),/^x$/i.test(m[3])?null:Number(m[3])]:null}
+export function versionAtLeast(v,min=[4,1,60],allowUnknownPatch=false){if(!v)return false;if(v[0]!==min[0])return v[0]>min[0];if(v[1]!==min[1])return v[1]>min[1];if(v[2]===null)return allowUnknownPatch;return v[2]>=min[2]}
 export function parseCsv(text){const s=String(text).replace(/^\uFEFF/,""),rows=[];let row=[],cell="",quoted=false;for(let i=0;i<s.length;i++){const c=s[i];if(quoted){if(c==='"'&&s[i+1]==='"'){cell+='"';i++}else if(c==='"')quoted=false;else cell+=c}else if(c==='"'&&cell==="")quoted=true;else if(c===","){row.push(cell);cell=""}else if(c==="\n"){row.push(cell.replace(/\r$/,""));if(row.some(x=>x!==""))rows.push(row);row=[];cell=""}else cell+=c}if(quoted)throw new Error("Unclosed CSV quote");if(row.length||cell){row.push(cell.replace(/\r$/,""));if(row.some(x=>x!==""))rows.push(row)}if(!rows.length)return [];const headers=rows.shift().map(x=>x.trim());if(new Set(headers).size!==headers.length)throw new Error("Duplicate CSV headers");return rows.map(v=>{if(v.length!==headers.length)throw new Error("CSV column count mismatch");return Object.fromEntries(headers.map((h,i)=>[h,v[i]]))})}
 export function validateProjectFiles(input){const entries=Object.create(null);let totalBytes=0;if(Object.keys(input).length>2000)throw new Error('Too many project files');for(const [rawName,data] of Object.entries(input)){const name=rawName.replace(/\\/g,"/");if(!name||name.startsWith("/")||/^[A-Za-z]:/.test(name)||name.split("/").some(x=>x===".."||x==="."||!x))throw new Error("Unsafe project path: "+rawName);if(!/\.(eprj3|epcb2|esch2|ecfg|evar|epan2)$/i.test(name))throw new Error("Unsupported file in native project package: "+name);if(entries[name])throw new Error("Duplicate project path: "+name);const bytes=data instanceof Uint8Array?data:new Uint8Array(data);if(bytes.byteLength>64*1024*1024)throw new Error('Project file exceeds 64 MiB: '+name);totalBytes+=bytes.byteLength;if(totalBytes>220*1024*1024)throw new Error('Project exceeds 220 MiB');entries[name]=bytes}const projects=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".eprj3"));if(projects.length!==1||projects[0].includes("/"))throw new Error("Package must contain exactly one root-level .eprj3 project file");const projectName=path.basename(projects[0],".eprj3"),pcb=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".epcb2")),sch=Object.keys(entries).filter(x=>x.toLowerCase().endsWith(".esch2"));if(!pcb.length||!sch.length)throw new Error("Project needs at least one PCB and one schematic source");const meta=JSON.parse(new TextDecoder().decode(entries[projects[0]]));if(!meta.profile||typeof meta.profile!=="object")throw new Error("Invalid EPRJ3 project profile");return {entries,projectName,projectFile:projects[0]}}
 export function checkBomCpl(bomText,cplText){
@@ -39,6 +39,8 @@ export function checkBomCpl(bomText,cplText){
   bRefs.push(...refs)
   const part=String(row["LCSC Part #"]??row["Supplier Part"]??"").trim()
   if(!/^C\d+$/i.test(part))blockers.push("Missing or invalid LCSC part number for "+raw+": "+part)
+  const supplier=String(row.Supplier??"").trim().toLowerCase()
+  if(supplier&&supplier!=="lcsc")blockers.push("Supplier is not LCSC for "+raw+": "+supplier)
   const comment=String(row.Comment??row["Manufacturer Part"]??row.Device??row.Value??"").trim()
   const footprint=String(row.Footprint??"").trim()
   if(!footprint)blockers.push("Missing footprint for "+raw)
@@ -48,13 +50,16 @@ export function checkBomCpl(bomText,cplText){
  for(const row of cpl){
   const ref=String(row.Designator??"").trim()
   if(!ref)blockers.push("CPL row has no designator");else cRefs.push(ref)
-  const smd=String(row.SMD??"").trim().toLowerCase();if(["no","false","0","tht"].includes(smd))warnings.push("Through-hole assembly capability must be confirmed: "+ref)
+  const smdRaw=String(row.SMD??"").trim().toLowerCase()
+  const smd=["yes","true","1","smd"].includes(smdRaw)?"Yes":["no","false","0","tht"].includes(smdRaw)?"No":""
+  if(smd==="No")warnings.push("Through-hole assembly capability must be confirmed: "+ref)
+  if(!smd)warnings.push("SMD/THT type is not specified in CPL: "+ref)
   const layer=String(row.Layer??"").trim().toLowerCase()
   if(!["top","bottom","t","b","front","back"].includes(layer))blockers.push("Unknown CPL layer for "+ref+": "+layer)
   if(["CN7","CN10"].includes(ref)&&["top","t","front"].includes(layer))warnings.push(ref+" is on the top side in the native CPL; verify the required underside THT orientation before PCBA.")
   const x=numeric(row["Mid X"]),y=numeric(row["Mid Y"]),rot=numeric(row.Rotation)
   for(const [field,value] of [["Mid X",x],["Mid Y",y],["Rotation",rot]])if(!Number.isFinite(value))blockers.push("Invalid CPL "+field+" for "+ref)
-  cplNormalized.push({Designator:ref,"Mid X":Number.isFinite(x)?x.toFixed(4):String(row["Mid X"]??""),"Mid Y":Number.isFinite(y)?y.toFixed(4):String(row["Mid Y"]??""),Layer:["bottom","b","back"].includes(layer)?"Bottom":"Top",Rotation:Number.isFinite(rot)?rot.toFixed(4):String(row.Rotation??"")})
+  cplNormalized.push({Designator:ref,"Mid X":Number.isFinite(x)?x.toFixed(4):String(row["Mid X"]??""),"Mid Y":Number.isFinite(y)?y.toFixed(4):String(row["Mid Y"]??""),Layer:["bottom","b","back"].includes(layer)?"Bottom":"Top",Rotation:Number.isFinite(rot)?rot.toFixed(4):String(row.Rotation??""),SMD:smd})
  }
  const dup=xs=>xs.filter((v,i)=>xs.indexOf(v)!==i)
  if(dup(bRefs).length)blockers.push("Duplicate BOM designators: "+[...new Set(dup(bRefs))].join(", "))
@@ -148,8 +153,8 @@ export async function exportBoard(exe,sessionId,boardName,verification,sourcePat
  for(const [label,suffixes] of [["top copper",[".GTL"]],["bottom copper",[".GBL"]],["top solder mask",[".GTS"]],["bottom solder mask",[".GBS"]],["board outline",[".GKO"]],["plated drill",[".DRL"]]]){
   if(!has(suffixes))blockers.push("Missing Gerber layer/file: "+label)
  }
- if(parity.cplNormalized.some(row=>row.SMD==="Yes")&&!has([".GTP"]))warnings.push("SMD parts exist but top paste Gerber was not detected.");
- if(parity.cplNormalized.some(row=>row.SMD==="Yes"&&row.Layer==="Bottom")&&!has([".GBP","GBB"]))warnings.push("Bottom-side SMD parts exist but bottom paste Gerber was not detected.");
+ if(parity.cplNormalized.some(row=>row.SMD==="Yes"&&row.Layer==="Top")&&!has([".GTP"]))blockers.push("Top-side SMD parts exist but top paste Gerber is missing.");
+ if(parity.cplNormalized.some(row=>row.SMD==="Yes"&&row.Layer==="Bottom")&&!has([".GBP",".GBB"]))blockers.push("Bottom-side SMD parts exist but bottom paste Gerber is missing.");
  warnings.push("EasyEDA Pro manufacturing-data APIs are beta preview APIs; validate the exported files independently.");
  warnings.push("JLCPCB stock, exact assembly eligibility, through-hole process, component-side orientation and final upload preview have not been confirmed.");
  warnings.push("Physical fit, electrical, thermal and safety validation remain the engineer's responsibility.");
