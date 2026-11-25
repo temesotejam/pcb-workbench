@@ -25,7 +25,7 @@ export async function inspectHandoff(entries){
  const bytes=p=>{const b=entries[p];requireIt(b instanceof Uint8Array,'Missing '+p);return b};const text=p=>dec.decode(bytes(p));const json=p=>JSON.parse(text(p));const rows=p=>csv(text(p));
  const manifest=rows('MANIFEST.csv');const index=new Map(manifest.map(r=>[r.Path,r]));requireIt(index.size===manifest.length,'Duplicate manifest path');let verified=0;
  for(const p of Object.keys(entries)){if(p==='MANIFEST.csv')continue;const m=index.get(p);requireIt(m&&Number(m.Bytes)===bytes(p).byteLength&&await hex(bytes(p))===m.SHA256.toLowerCase(),'Manifest mismatch: '+p);verified++}
- const placements=rows('tables/all_placements.csv'),pins=rows('tables/all_pins.csv'),nets=rows('tables/all_nets.csv');const boards=[];let upperProjectBase=null,upperProjectName=null;let upperProjectBase=null,upperProjectName=null;
+ const placements=rows('tables/all_placements.csv'),pins=rows('tables/all_pins.csv'),nets=rows('tables/all_nets.csv');const boards=[];let upperProjectBase=null,upperProjectName=null;
  for(const [key,folder,hashKey,cplFile] of [['Upper','current_upper','sha256','CPL_as_drawn.csv'],['Lower','design-verification/Lower_GPIO_Proto_R1','lowerProjectFiles','CPL.csv']]){
   const verify=json(folder+'/verification.json'),hashes=verify[hashKey];requireIt(hashes&&typeof hashes==='object','Missing source hashes '+key);
   const projectRel=Object.keys(hashes).find(p=>p.endsWith('.eprj3'));requireIt(projectRel,'Missing project source hash');const candidates=Object.keys(entries).filter(p=>p.startsWith('projects/')&&p.endsWith('/'+projectRel));requireIt(candidates.length===1,'Ambiguous project '+key);const projectPath=candidates[0],base=projectPath.slice(0,-projectRel.length);for(const [p,h] of Object.entries(hashes)){const rel=base+p.replace(/\\/g,'/');requireIt(await hex(bytes(rel))===h.toLowerCase(),'Verification hash mismatch: '+rel)}
@@ -33,15 +33,7 @@ export async function inspectHandoff(entries){
   let upperSourceLinkVerified=false,upperSourceFilesVerified=0;
   if(key==='Upper'){upperProjectBase=base;upperProjectName=project.name}
   else{upperSourceFilesVerified=await verifyUpperSourceLink(entries,upperProjectBase,upperProjectName,verify);upperSourceLinkVerified=true}
-  let upperSourceLinkVerified=false;
-  if(key==='Upper'){upperProjectBase=base;upperProjectName=project.name}
-  else{
-   requireIt(upperProjectBase&&upperProjectName,'Upper project must be inspected before lower project')
-   requireIt(verify.upperProject===upperProjectName,'Lower board references a different upper project')
-   const unchanged=verify.unchangedUpperFiles;requireIt(unchanged&&typeof unchanged==='object'&&Object.keys(unchanged).length>0,'Missing unchanged upper source hashes')
-   for(const [rel,h] of Object.entries(unchanged)){const path=upperProjectBase+rel.replace(/\\/g,'/');requireIt(await hex(bytes(path))===h.toLowerCase(),'Lower/upper source pairing mismatch: '+path)}
-   upperSourceLinkVerified=true
-  }requireIt(pcbInfo.length===1,'Expected exactly one PCB');const pcb=pcbInfo[0],nativeBoard=Object.values(profile.boards??{}).find(b=>b.uuid===pcb.board);requireIt(nativeBoard?.title,'Missing native EasyEDA board name');const pcbPath=base+'pcb/'+pcb.title+'.epcb2',raw=nativeDoc(text(pcbPath),'PCB',pcb.uuid);const a=attrs(raw),comp=raw.filter(r=>r.type==='COMPONENT'),byId=new Map(comp.map(r=>[r.id,a.get(r.id)?.Designator]));
+requireIt(pcbInfo.length===1,'Expected exactly one PCB');const pcb=pcbInfo[0],nativeBoard=Object.values(profile.boards??{}).find(b=>b.uuid===pcb.board);requireIt(nativeBoard?.title,'Missing native EasyEDA board name');const pcbPath=base+'pcb/'+pcb.title+'.epcb2',raw=nativeDoc(text(pcbPath),'PCB',pcb.uuid);const a=attrs(raw),comp=raw.filter(r=>r.type==='COMPONENT'),byId=new Map(comp.map(r=>[r.id,a.get(r.id)?.Designator]));
   const ps=placements.filter(r=>r.Board===key),pi=pins.filter(r=>r.Board===key),ns=nets.filter(r=>r.Board===key);requireIt(ps.length===verify.parts&&pi.length===verify.pinsChecked,'Recorded count mismatch: '+key);requireIt(same(comp.map(r=>byId.get(r.id)),ps.map(r=>r.Ref)),'Native PCB reference mismatch: '+key);
   for(const r of comp){const p=ps.find(p=>p.Ref===byId.get(r.id)),v=r.body;requireIt(p&&close(mm(v.x),number(p['X mm']))&&close(mm(v.y),number(p['Y mm']))&&angle(v.angle,number(p['Rotation deg']))&&String(v.layerId)===p['CAD layer']&&v.attrs?.['Unique ID']===p['Source UID'],'Native placement mismatch '+key+' '+p?.Ref)}
   const nativePins=raw.filter(r=>r.type==='PAD_NET').map(r=>{const k=JSON.parse(r.id);return [byId.get(k[1]),String(k[2]),r.body.padNet??'']});requireIt(same(nativePins,pi.map(r=>[r.Ref,r.Pad,r.Net])),'Native pin/net mismatch '+key);
