@@ -160,7 +160,7 @@ test("JLCPCB review bundle contains normalized BOM/CPL, Gerbers, hashes and a fa
  const gerber=zipSync({
   "board.GTL":enc("top copper"),"board.GBL":enc("bottom copper"),
   "board.GTS":enc("top mask"),"board.GBS":enc("bottom mask"),
-  "board.GKO":enc("outline"),"board.DRL":enc("drill"),"board.GTP":enc("top paste")
+  "board-Edge_Cuts.gm1":enc("outline"),"board.DRL":enc("drill"),"board.GTP":enc("top paste")
  })
  const result=buildJlcpcbReviewBundle({
   "Gerber.zip":gerber,
@@ -182,7 +182,7 @@ test("JLCPCB review bundle contains normalized BOM/CPL, Gerbers, hashes and a fa
  assert.equal(result.manifest.parity.referenceParity,true)
 })
 test("JLCPCB review bundle blocks missing source revision and DRC failures",()=>{
- const gerber=zipSync({"board.GTL":enc("x"),"board.GBL":enc("x"),"board.GTS":enc("x"),"board.GBS":enc("x"),"board.GKO":enc("x"),"board.DRL":enc("x")})
+ const gerber=zipSync({"board.GTL":enc("x"),"board.GBL":enc("x"),"board.GTS":enc("x"),"board.GBS":enc("x"),"board-Edge_Cuts.gm1":enc("x"),"board.DRL":enc("x")})
  const result=buildJlcpcbReviewBundle({
   "Gerber.zip":gerber,
   "BOM.csv":enc("Quantity,Designator,Comment,Footprint,LCSC Part #\r\n1,R1,10k,0603,C17414\r\n"),
