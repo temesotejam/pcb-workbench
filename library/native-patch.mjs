@@ -3,8 +3,8 @@ const dec=new TextDecoder('utf-8'),enc=new TextEncoder()
 const check=(v,s)=>{if(!v)throw new Error(s)}
 export const hash=async b=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',b)),v=>v.toString(16).padStart(2,'0')).join('')
 export const allowed={
- 'PCB:LINE':['startX','startY','endX','endY','width'],
- 'PCB:VIA':['centerX','centerY','viaDiameter','holeDiameter'],
+ 'PCB:LINE':['startX','startY','endX','endY','width','netName'],
+ 'PCB:VIA':['centerX','centerY','viaDiameter','holeDiameter','netName'],
  'PCB:COMPONENT':['x','y','angle','layerId'],
  'SCH_PAGE:COMPONENT':['x','y','rotation'],
  'SCH_PAGE:LINE':['startX','startY','endX','endY'],
@@ -55,6 +55,7 @@ export async function applyPatch(source,patch){
   for(const field of fields){
    const value=c.set[field];check(Object.hasOwn(v,field)&&v[field]===c.expect[field],'Stale field: '+field)
    if(field==='value')check(typeof value==='string'&&value.length<=2000,'Invalid text')
+   else if(field==='netName')check(typeof value==='string'&&value.length>0&&value.length<=256&&!/[\\r\\n\\0]/.test(value),'Invalid net name')
    else check(typeof value==='number'&&Number.isFinite(value)&&(!['width','viaDiameter','holeDiameter'].includes(field)||value>0),'Invalid number')
    if(c.docType==='PCB'&&c.recordType==='COMPONENT'&&field==='layerId')check(value===1||value===2,'PCB component layerId must be 1 (Top) or 2 (Bottom)')
   }
