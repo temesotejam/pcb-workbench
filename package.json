@@ -1,0 +1,16 @@
+{
+  "name": "pcb-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run scripts/build.tsx",
+    "test": "python3 -m unittest discover -s tests -v"
+  },
+  "dependencies": {
+    "tscircuit": "0.0.3289",
+    "circuit-json-to-kicad": "0.0.282",
+    "circuit-to-svg": "0.0.463",
+    "react": "19.1.0"
+  }
+}

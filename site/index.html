@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PCB Workbench</title><link rel="stylesheet" href="style.css"></head>
+<body><header><div><strong>PCB Workbench</strong><span>AI-operated EDA · JLCPCB</span></div><a href="https://github.com/temesotejam/pcb-workbench">GitHub ↗</a></header>
+<main><aside><h2>Projects</h2><label for="projects">プロジェクト</label><select id="projects" disabled></select><p id="purpose"></p><h2>Manufacturing</h2><p id="state" class="notice" role="status">データ読み込み中…</p><p>発注と決済はユーザーがJLCPCBで行います。</p><a href="https://jlcpcb.com/" target="_blank" rel="noopener">JLCPCB ↗</a></aside>
+<section class="work"><div class="bar"><h1 id="name">Project</h1><span id="rev"></span></div><nav aria-label="Design views"><button data-tab="schematic" aria-pressed="true">回路図</button><button data-tab="pcb" aria-pressed="false">PCB</button><button data-tab="parts" aria-pressed="false">部品表</button><button data-tab="reports" aria-pressed="false">検証</button><button data-tab="files" aria-pressed="false">ファイル</button></nav>
+<div id="tools"><button id="out" aria-label="縮小">−</button><button id="reset">100%</button><button id="in" aria-label="拡大">＋</button></div><div id="content" aria-live="polite"></div></section></main>
+<footer>v0.1 · Draft engineering workspace · No automatic ordering</footer><script type="module" src="app.js"></script></body></html>
