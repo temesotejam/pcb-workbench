@@ -155,7 +155,12 @@ def process(root, meta_path):
     blockers.append("Production release gate disabled in v0.1; manual JLCPCB preview and engineering review not implemented.")
     ok = ok and checks_ok
     summary.update(status="draft" if ok else "blocked", blockers=blockers, orderReady=False)
-    (dest/"validation.json").write_text(json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False},indent=2))
+    validation_text = json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False},indent=2)
+    (dest/"validation.json").write_text(validation_text)
+    (draft/"validation.json").write_text(validation_text)
+    for report in (erc_path,drc_path):
+        if report.is_file():
+            (draft/report.name).write_bytes(report.read_bytes())
     summary["files"].append("validation.json")
     summary_path.write_text(json.dumps(summary,indent=2))
     return ok
