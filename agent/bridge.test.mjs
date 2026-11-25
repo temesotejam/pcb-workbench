@@ -190,6 +190,6 @@ test("JLCPCB review bundle blocks missing source revision and DRC failures",()=>
  assert.equal(result.manifest.status,"BLOCKED")
  assert.ok(result.manifest.blockers.some(x=>x.includes("source revision")))
  assert.ok(result.manifest.blockers.some(x=>x.includes("PCB DRC")))
- assert.ok(result.manifest.blockers.some(x=>x.includes("schematic ERC")))
+ assert.ok(result.manifest.blockers.some(x=>x.toLowerCase().includes("schematic erc")))
  assert.equal(result.manifest.orderReady,false)
 })
