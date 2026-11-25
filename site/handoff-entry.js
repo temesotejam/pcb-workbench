@@ -169,6 +169,60 @@ function nativePanel(p){
   }catch(e){status.textContent='回路図編集を中止しました: '+e.message}
   finally{schApply.disabled=false}
  }
+ const routeEditor=add(p,'section','')
+ add(routeEditor,'h3','既存配線トラックの形状編集')
+ add(routeEditor,'p','既存のPCB:LINEレコードのみを編集します。端点を動かすとパッド・ビアから外れて未接続になる場合があります。自動配線・ネット変更・新規トラック追加は行いません。必ずEasyEDAで接続状態とDRCを再確認してください。')
+ const routeRow=add(routeEditor,'p',''),routeSelect=add(routeRow,'select',''),routeRefresh=add(routeRow,'button','配線トラックを読み込む')
+ const trackFields=add(routeEditor,'div','')
+ const trackInputs={}
+ for(const [key,label,step] of [['startX','Start X (mil)','1'],['startY','Start Y (mil)','1'],['endX','End X (mil)','1'],['endY','End Y (mil)','1'],['width','Width (mil)','0.1']]){
+  const l=add(trackFields,'label',label+' '),input=add(l,'input');input.type='number';input.step=step;trackInputs[key]=input
+ }
+ const routeApply=add(routeEditor,'button','配線形状の変更を適用')
+ let routeRecords=[]
+ const loadRouteRecords=async()=>{
+  routeRefresh.disabled=true
+  try{
+   const inspection=await inspectSource(nativeSource(entries,board))
+   routeRecords=inspection.documents.filter(x=>x.docType==='PCB'&&x.recordType==='LINE'&&['startX','startY','endX','endY','width'].every(k=>Number.isFinite(x.fields[k]))&&x.fields.width>0)
+   const counts=new Map()
+   for(const item of routeRecords)counts.set(item.recordId,(counts.get(item.recordId)||0)+1)
+   routeRecords=routeRecords.filter(item=>counts.get(item.recordId)===1)
+   routeSelect.replaceChildren()
+   for(const item of routeRecords){const o=add(routeSelect,'option',(item.net||'No net')+' · '+item.recordId+' · ('+item.fields.startX+','+item.fields.startY+') → ('+item.fields.endX+','+item.fields.endY+')');o.value=item.recordId+'|'+item.path}
+   if(!routeRecords.length)throw new Error('編集可能な配線トラックがありません')
+   const first=routeRecords[0];for(const key of Object.keys(trackInputs))trackInputs[key].value=first.fields[key]
+   status.textContent=routeRecords.length+'本の既存トラックを編集対象として読み込みました。'
+  }catch(e){status.textContent='配線一覧の読み込み失敗: '+e.message}
+  finally{routeRefresh.disabled=false}
+ }
+ routeSelect.onchange=()=>{
+  const item=routeRecords.find(x=>x.recordId+'|'+x.path===routeSelect.value)
+  if(!item)return
+  for(const key of Object.keys(trackInputs))trackInputs[key].value=item.fields[key]
+ }
+ routeRefresh.onclick=loadRouteRecords
+ routeApply.onclick=async()=>{
+  routeApply.disabled=true
+  try{
+   const item=routeRecords.find(x=>x.recordId+'|'+x.path===routeSelect.value)
+   if(!item)throw new Error('編集する配線トラックを選択してください')
+   const values=Object.fromEntries(Object.entries(trackInputs).map(([key,input])=>[key,Number(input.value)]))
+   if(!Object.values(values).every(Number.isFinite))throw new Error('配線座標と幅には有限の数値を入力してください')
+   if(values.width<=0||values.width>500)throw new Error('配線幅は0より大きく500 mil以下にしてください')
+   if(Math.hypot(values.endX-values.startX,values.endY-values.startY)<0.01)throw new Error('配線長が0に近すぎます')
+   const set={},expect={}
+   for(const key of Object.keys(values))if(values[key]!==item.fields[key]){set[key]=values[key];expect[key]=item.fields[key]}
+   if(!Object.keys(set).length){status.textContent='変更はありません。';return}
+   if(!confirm('既存トラック '+item.recordId+' ('+(item.net||'No net')+') の形状を変更します。\\n端点移動により接続が切れる可能性があります。ネット名は変更されません。\\n続行しますか？'))return
+   const patch={schema:'pcb-workbench-native-patch/v1',changes:[{path:item.path,baseSha256:item.baseSha256,docType:item.docType,docUuid:item.docUuid,recordType:item.recordType,recordId:item.recordId,expect,set}]}
+   const result=await applyPatchText(JSON.stringify(patch))
+   const rv=result.updateResult?.runtimeVerification
+   status.textContent=result.liveApplied?(rv?.passed?'既存トラックの形状をEasyEDAへ反映し、再読込を確認しました。接続・DRCを確認してください。':'書込み後の再読込確認が未完了です。製造データには使用しないでください。'):'配線変更済みZIPを出力しました。EasyEDAで読み込み、接続とDRCを確認してください。'
+   routeRecords=[]
+  }catch(e){status.textContent='配線編集を中止しました: '+e.message}
+  finally{routeApply.disabled=false}
+ }
  if(board.nativeBoardName==="NUCLEO-F401RE Rev1.5"){
   const underside=add(p,'button','CN7 / CN10 を裏面へ移動（確認付き）')
   underside.onclick=async()=>{
