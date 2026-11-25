@@ -35,6 +35,16 @@ test("Native patch preflight requires exact project root, file set and SHA256 ma
 
 const enc=s=>new TextEncoder().encode(s)
 const sha=b=>createHash("sha256").update(b).digest("hex")
+
+const nativeSource=(pcbValue="old",schValue="old")=>{
+ const doc=(type,uuid)=>JSON.stringify({type:"DOCHEAD",id:"head"})+"||"+JSON.stringify({docType:type,uuid})+"\n"
+ const rec=(type,id,value)=>JSON.stringify({type,id})+"||"+JSON.stringify({value})+"\n"
+ return {
+  "Demo.eprj3":enc('{"profile":{}}'),
+  "pcb/Board.epcb2":enc(doc("PCB","pcb-1")+rec("COMPONENT","c1",pcbValue)),
+  "sch/Page.esch2":enc(doc("SCH_PAGE","sch-1")+rec("COMPONENT","s1",schValue)+rec("WIRE","w1","wire"))
+ }
+}
 test("Native patch writes only changed files after exact SHA preflight and keeps backup",async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),"pwb-apply-"))
  const dir=path.join(root,"Demo")
@@ -119,11 +129,11 @@ test("Live EDA reload verification failure rolls native files back",async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),"pwb-live-")),dir=path.join(root,"Demo")
  try{
   await mkdir(path.join(dir,"pcb"),{recursive:true});await mkdir(path.join(dir,"sch"),{recursive:true})
-  const source={"Demo.eprj3":enc('{"profile":{}}'),"pcb/Board.epcb2":enc("old"),"sch/Page.esch2":enc("old")}
+  const source=nativeSource("old","old")
   for(const [name,data] of Object.entries(source)){const target=path.join(dir,name);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,data)}
   const hashes=Object.fromEntries(Object.entries(source).map(([name,data])=>[name,sha(data)]))
-  await assert.rejects(applyNativePatchFiles(dir,[root],zipSync({...source,"pcb/Board.epcb2":enc("new")}),hashes,async()=>null,async()=>{throw new Error("EDA object count mismatch")}),/original files were restored/)
-  assert.equal((await readFile(path.join(dir,"pcb/Board.epcb2"))).toString(),"old")
+  await assert.rejects(applyNativePatchFiles(dir,[root],zipSync(nativeSource("new","old")),hashes,async()=>null,async()=>{throw new Error("EDA object count mismatch")}),/original files were restored/)
+  assert.ok((await readFile(path.join(dir,"pcb/Board.epcb2"))).toString().includes('"value":"old"'))
  }finally{await rm(root,{recursive:true,force:true})}
 })
 
@@ -131,10 +141,10 @@ test("Successful live patch returns explicit runtime reload evidence",async()=>{
  const root=await mkdtemp(path.join(os.tmpdir(),"pwb-runtime-")),dir=path.join(root,"Demo")
  try{
   await mkdir(path.join(dir,"pcb"),{recursive:true});await mkdir(path.join(dir,"sch"),{recursive:true})
-  const source={"Demo.eprj3":enc('{"profile":{}}'),"pcb/Board.epcb2":enc("old"),"sch/Page.esch2":enc("old")}
+  const source=nativeSource("old","old")
   for(const [name,data] of Object.entries(source)){const target=path.join(dir,name);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,data)}
   const hashes=Object.fromEntries(Object.entries(source).map(([name,data])=>[name,sha(data)]))
-  const result=await applyNativePatchFiles(dir,[root],zipSync({...source,"pcb/Board.epcb2":enc("new")}),hashes,async()=>null,async()=>({passed:true,pcb:{expectedComponents:2,actualComponents:2}}))
+  const result=await applyNativePatchFiles(dir,[root],zipSync(nativeSource("new","old")),hashes,async()=>null,async({expectedDocuments})=>({passed:true,pcb:{expectedComponents:expectedDocuments.find(x=>x.docType==="PCB").componentCount,actualComponents:1}}))
   assert.equal(result.readBackVerified,true)
   assert.equal(result.runtimeVerification.passed,true)
   assert.deepEqual(result.updatedFiles,["pcb/Board.epcb2"])

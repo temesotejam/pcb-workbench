@@ -174,7 +174,7 @@ export function validateNativePatchTarget(projectDir,projectPaths,info,baseHashe
  for(const [name,sha] of Object.entries(baseHashes))if(!/^[a-f0-9]{64}$/i.test(sha))throw new Error("Invalid base SHA-256 for "+name)
  return {dir,names}
 }
-export async function applyNativePatchFiles(projectDir,projectPaths,zipBytes,baseHashes,beforeWrite=async()=>{},afterWrite=async()=>null){
+export async function applyNativePatchFiles(projectDir,projectPaths,zipBytes,baseHashes,beforeWrite=async()=>{},afterWrite=null){
  const info=validateProjectFiles(unzipSync(zipBytes))
  const {dir,names}=validateNativePatchTarget(projectDir,projectPaths,info,baseHashes)
  await beforeWrite()
@@ -200,7 +200,7 @@ export async function applyNativePatchFiles(projectDir,projectPaths,zipBytes,bas
    const actual=await readFile(targets.get(name)),expected=Buffer.from(info.entries[name])
    if(!actual.equals(expected))throw new Error("Read-back verification failed: "+name)
   }
-  const runtimeVerification=await afterWrite({projectName:info.projectName,expectedDocuments:nativeDocumentCounts(info.entries),projectDir:dir})
+  const runtimeVerification=afterWrite?await afterWrite({projectName:info.projectName,expectedDocuments:nativeDocumentCounts(info.entries),projectDir:dir}):null
   return {updatedFiles:updated,projectDir:dir,backupDir:backupRoot,readBackVerified:true,runtimeVerification,verificationInvalidated:true}
  }catch(error){
   const rollbackErrors=[]
