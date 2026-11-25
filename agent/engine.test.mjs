@@ -15,7 +15,7 @@ test("CLI envelope accepts wrapped JSON and checks errors",()=>{
 test("version gate uses numeric segments",()=>{
  assert.deepEqual(parseVersion("EasyEDA Pro 4.1.105.abcdef"),[4,1,105]);assert.deepEqual(parseVersion("EasyEDA Pro 4.1.x.abcdef"),[4,1,null]);assert.equal(versionAtLeast([4,1,null],[4,1,60],true),true);assert.equal(versionAtLeast([4,1,null],[4,1,60]),false)
  assert.equal(versionAtLeast([4,1,105]),true)
- assert.equal(versionAtLeast([4,1,60]),false)
+ assert.equal(versionAtLeast([4,1,60]),true);assert.equal(versionAtLeast([4,1,59]),false)
  assert.equal(versionAtLeast([4,2,0]),true)
 })
 test("CSV parser handles commas, escaped quotes and CRLF",()=>{

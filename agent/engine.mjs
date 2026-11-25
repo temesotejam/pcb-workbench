@@ -115,7 +115,7 @@ export async function verifyBoard(exe,sessionId,boardName){
  "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo(); const targetPages=pages.filter(p=>p.parentSchematicUuid===b.schematic?.uuid); const schematic=[];",
  "for(const page of targetPages){const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:'Could not open schematic page'});continue;}await eda.sch_Document.save();await new Promise(r=>setTimeout(r,8000));let verbose=null,verboseError=null;try{verbose=await eda.sch_Drc.check(true,false,true);}catch(e){verboseError=String(e);}try{const passed=await eda.sch_Drc.check(true,false,false);schematic.push({name:page.name,uuid:page.uuid,passed:passed===true,verbose,verboseError});}catch(e){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:String(e),verbose,verboseError});}}",
  "return {board:{name:b.name,uuid:b.uuid,pcbUuid:b.pcb.uuid,schematicUuid:b.schematic?.uuid??null},pcb:{passed:pcbPassed===true,booleanResult:pcbPassed,verbose:pcbVerbose,verboseError:pcbVerboseError},schematics:schematic,schematicPassed:targetPages.length>0&&schematic.length===targetPages.length&&schematic.every(x=>x.passed),checkedAt:new Date().toISOString(),engineVersion:eda.sys_Environment.getEditorCurrentVersion()};"
- ].join("\\n");
+ ].join("\n");
  return await invoke(exe,sessionId,code,{boardName},360000)
 }
 export async function exportBoard(exe,sessionId,boardName,verification,sourcePath){
@@ -131,7 +131,7 @@ export async function exportBoard(exe,sessionId,boardName,verification,sourcePat
  "const cpl=await eda.pcb_ManufactureData.getPickAndPlaceFile('PCB_Workbench_CPL','csv',ESYS_Unit.MILLIMETER);",
  "let step=null,stepError=null;try{step=await eda.pcb_ManufactureData.get3DFile('PCB_Workbench_Board','step',['Component Model'],'Outfit',true);}catch(e){stepError=String(e);}",
  "return {boardName:b.name,engineVersion:eda.sys_Environment.getEditorCurrentVersion(),files:{gerber:await toB64(gerber),bom:await toB64(bom),cpl:await toB64(cpl),step:step?await toB64(step):null,netlist:netlist?await toB64(netlist):null},optionalErrors:{step:stepError,netlist:netlistError}};"
- ].join("\\n");
+ ].join("\n");
  const result=await invoke(exe,sessionId,code,{boardName},360000),files=Object.create(null);
  for(const [key,value] of Object.entries(result.files??{})){
   if(!value)continue;
