@@ -10,7 +10,8 @@ class AssemblyTests(unittest.TestCase):
     def test_mapping(self):
         b,c,errors=assembly_rows([part()],[position()])
         self.assertEqual(errors,[])
-        self.assertEqual(b[0]["JLCPCB Part #"],"C123")
+        self.assertEqual(b[0]["LCSC Part #"],"C123")
+        self.assertEqual(b[0]["Quantity"],"1")
         self.assertEqual(c[0],{"Designator":"R1","Mid X":"12.500000","Mid Y":"-8.500000","Rotation":"5.0000","Layer":"Top"})
     def test_missing_part_number_and_rotation(self):
         _,_,errors=assembly_rows([part(lcsc=None,reviewed=False,rotationOffset=None)],[position()])
