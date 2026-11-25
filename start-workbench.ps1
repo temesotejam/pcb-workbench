@@ -20,10 +20,14 @@ if (-not $Cli) {
 }
 if ($Cli -is [System.Management.Automation.ApplicationInfo]) { $CliPath = $Cli.Source } else { $CliPath = $Cli.FullName }
 $Help = (& $CliPath --help 2>&1 | Out-String)
-$Match = [regex]::Match($Help, "EasyEDA Pro\s+(\d+)\.(\d+)\.(\d+)")
+$Match = [regex]::Match($Help, "EasyEDA Pro\s+(\d+)\.(\d+)\.(\d+|x)")
 if (-not $Match.Success) { throw ("Could not identify EasyEDA Pro CLI version. Run: " + $CliPath + " --help") }
-$Version = [version]::Parse("$($Match.Groups[1].Value).$($Match.Groups[2].Value).$($Match.Groups[3].Value)")
-if ($Version -lt [version]"4.1.70") { throw "EasyEDA Pro CLI 4.1.70+ is required. Detected $Version" }
+$Major = [int]$Match.Groups[1].Value
+$Minor = [int]$Match.Groups[2].Value
+$Patch = $Match.Groups[3].Value
+if (($Major -lt 4) -or ($Major -eq 4 -and $Minor -lt 1)) { throw "EasyEDA Pro CLI 4.1.60+ is required. Detected $($Match.Value)" }
+if ($Patch -ne "x" -and [version]::Parse("$Major.$Minor.$Patch") -lt [version]"4.1.60") { throw "EasyEDA Pro CLI 4.1.60+ is required. Detected $($Match.Value)" }
+$Version = $Match.Value
 $Node = Get-Command "node" -ErrorAction SilentlyContinue
 if (-not $Node) {
   Write-Host "Node.js 20+ is required for the local web bridge." -ForegroundColor Yellow

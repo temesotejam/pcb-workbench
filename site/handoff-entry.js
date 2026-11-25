@@ -37,8 +37,9 @@ function localEnginePanel(p){
 }
 async function applyPatchText(patchText){
  const source=nativeSource(entries,board),r=await applyPatch(source,JSON.parse(patchText))
- Object.assign(entries,r.source);dirty=true;agentVerification=null
- const patched=zipSync(nativeSource(entries,board))
+ for(const [rel,data] of Object.entries(r.source))entries[board.projectBase+rel]=data
+ dirty=true;agentVerification=null
+ const patched=zipSync(r.source)
  if(agentImport){await localAgent('update',patched,true);agentImport.sourceUpdated=true}
  download(zipSync({...r.source,'PATCH_REPORT.json':new TextEncoder().encode(JSON.stringify(r.report,null,2))}),board.key+'-PATCHED-UNVERIFIED.zip','application/zip')
 }
@@ -46,11 +47,10 @@ function nativePanel(p){
  localEnginePanel(p)
  add(p,'h2','設計元データ・AI差分')
  add(p,'p','原本を保持します。AIが作成したJSON差分を適用すると、変更したネイティブ設計だけを新しいZIPに出力します。回路図・配線・部品の位置変更後はEasyEDA公式エンジンで再検証が必要です。')
- const source=nativeSource(entries,board)
  const sourceButton=add(p,'button','元の編集可能な設計ZIP')
- sourceButton.onclick=()=>download(zipSync(source),board.key+'-native-source.zip','application/zip')
+ sourceButton.onclick=()=>download(zipSync(nativeSource(entries,board)),board.key+'-native-source.zip','application/zip')
  const inspectButton=add(p,'button','AI編集用レコード一覧JSON')
- inspectButton.onclick=async()=>{try{download(JSON.stringify(await inspectSource(source),null,2),board.key+'-editable-records.json')}catch(e){status.textContent=e.message}}
+ inspectButton.onclick=async()=>{try{download(JSON.stringify(await inspectSource(nativeSource(entries,board)),null,2),board.key+'-editable-records.json')}catch(e){status.textContent=e.message}}
  const lbl=add(p,'p','AI差分JSONを選択'),file=add(lbl,'input');file.type='file';file.accept='.json,application/json'
  const status=add(p,'p','原本は未変更です。')
  file.onchange=async()=>{try{const f=file.files?.[0];if(!f)return;if(f.size>5*1024*1024)throw new Error('Patch too large');const patchText=await f.text();await applyPatchText(patchText);}catch(e){status.textContent='差分適用中止: '+e.message}}
