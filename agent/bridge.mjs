@@ -70,16 +70,16 @@ export async function bridgeVerifyBoard(port,windowId,boardName){
  "const args="+JSON.stringify({boardName})+";",
  "const boards=await eda.dmt_Board.getAllBoardsInfo();const b=boards.find(x=>x.name===args.boardName);",
  "if(!b||!b.pcb?.uuid)throw new Error('Board or PCB UUID not found: '+args.boardName);",
- "const classify=(items,key)=>{const errors=[],warnings=[],unknown=[];for(const v of Array.isArray(items)?items:[]){const level=String(v?.[key]??v?.type??v?.errorType??'').toLowerCase();if(level==='error'||level==='fatalerror')errors.push(v);else if(level==='warn'||level==='warning')warnings.push(v);else if(level==='info'){}else unknown.push(v);}return {errors,warnings,unknown};};",
+"const classifyDrcItems="+classifyDrcItems.toString()+";",
  "const pcbTab=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(!pcbTab)throw new Error('Could not open PCB document');",
  "await eda.pcb_Document.save();await new Promise(r=>setTimeout(r,8000));",
  "let pcbVerbose=null,pcbVerboseError=null,pcbDetailAvailable=false;try{pcbVerbose=await eda.pcb_Drc.check(true,false,true);pcbDetailAvailable=Array.isArray(pcbVerbose);}catch(e){pcbVerboseError=String(e);}",
  "let pcbStrict=false;try{pcbStrict=await eda.pcb_Drc.check(true,false,false)===true;}catch(e){if(!pcbVerboseError)pcbVerboseError=String(e);}",
- "const pcbClass=classify(pcbVerbose,'errorType');const pcbPassed=pcbDetailAvailable?(pcbClass.errors.length===0&&pcbClass.unknown.length===0):pcbStrict;",
+ "const pcbClass=classifyDrcItems(pcbVerbose,'errorType');const pcbPassed=pcbDetailAvailable?(pcbClass.errors.length===0&&pcbClass.unknown.length===0):pcbStrict;",
  "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo();const target=pages.filter(p=>p.parentSchematicUuid===b.schematic?.uuid);const schematic=[];",
- "for(const page of target){const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){schematic.push({name:page.name,uuid:page.uuid,passed:false,detailAvailable:false,error:'Could not open page'});continue;}await eda.sch_Document.save();await new Promise(r=>setTimeout(r,8000));let verbose=null,verboseError=null,detailAvailable=false;try{verbose=await eda.sch_Drc.check(true,false,true);detailAvailable=Array.isArray(verbose);}catch(e){verboseError=String(e);}let strictPassed=false;try{strictPassed=await eda.sch_Drc.check(true,false,false)===true;}catch(e){if(!verboseError)verboseError=String(e);}const cls=classify(verbose,'type');const passed=detailAvailable?(cls.errors.length===0&&cls.unknown.length===0):strictPassed;schematic.push({name:page.name,uuid:page.uuid,passed,strictPassed,detailAvailable,errors:cls.errors,warnings:cls.warnings,unknown:cls.unknown,verboseError});}",
- "const errorCount=pcbClass.errors.length+pcbClass.unknown.length+schematic.reduce((n,x)=>n+x.errors.length+x.unknown.length,0);const warningCount=pcbClass.warnings.length+schematic.reduce((n,x)=>n+x.warnings.length,0);",
- "return {board:{name:b.name,uuid:b.uuid,pcbUuid:b.pcb.uuid,schematicUuid:b.schematic?.uuid??null},pcb:{passed:pcbPassed,strictPassed:pcbStrict,detailAvailable:pcbDetailAvailable,errors:pcbClass.errors,warnings:pcbClass.warnings,unknown:pcbClass.unknown,verboseError:pcbVerboseError},schematics:schematic,schematicPassed:target.length>0&&schematic.length===target.length&&schematic.every(x=>x.passed),errorCount,warningCount,checkedAt:new Date().toISOString(),engineVersion:eda.sys_Environment.getEditorCurrentVersion()};"
+ "for(const page of target){const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){schematic.push({name:page.name,uuid:page.uuid,passed:false,detailAvailable:false,error:'Could not open page'});continue;}await eda.sch_Document.save();await new Promise(r=>setTimeout(r,8000));let verbose=null,verboseError=null,detailAvailable=false;try{verbose=await eda.sch_Drc.check(true,false,true);detailAvailable=Array.isArray(verbose);}catch(e){verboseError=String(e);}let strictPassed=false;try{strictPassed=await eda.sch_Drc.check(true,false,false)===true;}catch(e){if(!verboseError)verboseError=String(e);}const cls=classifyDrcItems(verbose,'type');const passed=detailAvailable?(cls.errors.length===0&&cls.unknown.length===0):strictPassed;schematic.push({name:page.name,uuid:page.uuid,passed,strictPassed,detailAvailable,errors:cls.errors,warnings:cls.warnings,unknown:cls.unknown,verboseError});}",
+ "const errorCount=pcbClass.errors.length+pcbClass.unknown.length+schematic.reduce((n,x)=>n+x.errors.length+x.unknown.length,0);const warningCount=pcbClass.warnings.length+schematic.reduce((n,x)=>n+x.warnings.length,0);const unknownCount=pcbClass.unknown.length+schematic.reduce((n,x)=>n+x.unknown.length,0);",
+ "return {board:{name:b.name,uuid:b.uuid,pcbUuid:b.pcb.uuid,schematicUuid:b.schematic?.uuid??null},pcb:{passed:pcbPassed,strictPassed:pcbStrict,detailAvailable:pcbDetailAvailable,errors:pcbClass.errors,warnings:pcbClass.warnings,unknown:pcbClass.unknown,verboseError:pcbVerboseError},schematics:schematic,schematicPassed:target.length>0&&schematic.length===target.length&&schematic.every(x=>x.passed),errorCount,warningCount,unknownCount,checkedAt:new Date().toISOString(),engineVersion:eda.sys_Environment.getEditorCurrentVersion()};"
  ].join("\n")
  return await bridgeExecute(port,windowId,code,120000)
 }
@@ -98,6 +98,18 @@ async function exportFiles(port,windowId,boardName){
  "return {boardName:b.name,engineVersion:eda.sys_Environment.getEditorCurrentVersion(),files:{gerber:await toB64(gerber),bom:await toB64(bom),cpl:await toB64(cpl),step:step?await toB64(step):null,netlist:netlist?await toB64(netlist):null},optionalErrors:{step:stepError,netlist:netlistError}};"
  ].join("\n")
  return await bridgeExecute(port,windowId,code,120000)
+}
+export function classifyDrcItems(items,severityField="type"){
+ const result={errors:[],warnings:[],unknown:[],info:[]}
+ if(!Array.isArray(items)){result.unknown.push({value:items,reason:"DRC details were not an array"});return result}
+ for(const item of items){
+  const level=String(item?.[severityField]??item?.type??item?.errorType??"").toLowerCase()
+  if(level==="error"||level==="fatalerror")result.errors.push(item)
+  else if(level==="warn"||level==="warning")result.warnings.push(item)
+  else if(level==="info"||level==="information")result.info.push(item)
+  else result.unknown.push(item)
+ }
+ return result
 }
 export function expectedAssemblySideProfile(projectName){
  if(projectName==="NUCLEO-F401RE Rev1.5")return {CN7:"Bottom",CN10:"Bottom"}

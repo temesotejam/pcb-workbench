@@ -5,7 +5,7 @@ import os from "node:os"
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { zipSync } from "fflate"
-import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles, expectedAssemblySideProfile } from "./bridge.mjs"
+import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles, expectedAssemblySideProfile, classifyDrcItems } from "./bridge.mjs"
 
 test("Bridge response envelopes unwrap values and reject failures",()=>{
  assert.deepEqual(parseBridgeEnvelope({success:true,result:{ok:1}}),{ok:1})
@@ -79,4 +79,26 @@ test("NUCLEO upper and lower projects have distinct CN7/CN10 assembly sides",()=
  assert.deepEqual(expectedAssemblySideProfile("NUCLEO-F401RE Rev1.5"),{CN7:"Bottom",CN10:"Bottom"})
  assert.deepEqual(expectedAssemblySideProfile("NUCLEO-F401RE Lower GPIO Proto R1"),{CN7:"Top",CN10:"Top"})
  assert.deepEqual(expectedAssemblySideProfile("Unregistered project"),{})
+})
+
+test("EasyEDA schematic DRC severity keeps warnings separate from errors",()=>{
+ const result=classifyDrcItems([
+  {type:"fatalError",rule:"FATAL"},
+  {type:"error",rule:"PIN"},
+  {type:"warn",rule:"CHECKFLOATPIN"}
+ ],"type")
+ assert.equal(result.errors.length,2)
+ assert.equal(result.warnings.length,1)
+ assert.equal(result.unknown.length,0)
+ assert.equal(result.warnings[0].rule,"CHECKFLOATPIN")
+})
+test("Unknown PCB DRC errorType is conservatively blocking, never silently treated as a warning",()=>{
+ const result=classifyDrcItems([{errorType:"CLEARANCE",ruleName:"Copper clearance"}],"errorType")
+ assert.equal(result.errors.length,0)
+ assert.equal(result.warnings.length,0)
+ assert.equal(result.unknown.length,1)
+})
+test("Empty detailed DRC array means no violations; missing details are unknown",()=>{
+ assert.deepEqual(classifyDrcItems([]),{errors:[],warnings:[],unknown:[],info:[]})
+ assert.equal(classifyDrcItems(null).unknown.length,1)
 })
