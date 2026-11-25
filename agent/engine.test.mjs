@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { parseEnvelope, parseVersion, versionAtLeast, parseCsv, validateProjectFiles, checkBomCpl, hashProjectDir, updateProject } from "./engine.mjs"
+import { parseEnvelope, parseVersion, versionAtLeast, parseCsv, validateProjectFiles, checkBomCpl, hashProjectDir, writeProjectFiles } from "./engine.mjs"
 import { mkdtemp, writeFile, mkdir, rm, readFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
