@@ -11,7 +11,7 @@ if (-not $Cli) {
   Start-Process "https://easyeda.com/page/download"
   exit 1
 }
-$CliPath = if ($Cli.Source) { $Cli.Source } else { $Cli.Path }
+$CliPath = if ($Cli -is [System.Management.Automation.ApplicationInfo]) { $Cli.Source } else { $Cli.FullName }
 $Help = (& $CliPath --help 2>&1 | Out-String)
 $Match = [regex]::Match($Help, "EasyEDA Pro\s+(\d+)\.(\d+)\.(\d+)")
 if (-not $Match.Success) { throw ("Could not identify EasyEDA Pro CLI version. Run: " + $CliPath + " --help") }
@@ -26,7 +26,7 @@ if (-not $Node) {
 $NodeVersion = (& node --version).Trim().TrimStart("v")
 if ([version]$NodeVersion -lt [version]"20.0") { throw "Node.js 20+ required. Detected $NodeVersion" }
 Set-Location $Root
-if (-not (Test-Path (Join-Path $Root "node_modules/esbuild"))) { Write-Host "Installing local web bridge dependencies..."; npm install }
+$Esbuild = Test-Path (Join-Path $Root "node_modules/esbuild")\n$Fflate = Test-Path (Join-Path $Root "node_modules/fflate")\nif (-not ($Esbuild -and $Fflate)) { Write-Host "Installing local web bridge dependencies..."; npm install }
 $env:EASYEDA_PRO_CLI = $CliPath
 Write-Host "EasyEDA Pro $Version detected. Starting the local-only web workspace..."
 Start-Process "http://127.0.0.1:8787/handoff.html"
