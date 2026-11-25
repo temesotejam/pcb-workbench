@@ -3,7 +3,7 @@ import path from "node:path"
 import os from "node:os"
 import { readFile, writeFile, mkdir, mkdtemp, access } from "node:fs/promises"
 import { createHash } from "node:crypto"
-import { checkBomCpl, csvString, validateProjectFiles } from "./engine.mjs"
+import { checkBomCpl, csvString, validateProjectFiles, hashProjectDir } from "./engine.mjs"
 import { records } from "../library/native-patch.mjs"
 
 const ports=Array.from({length:10},(_,i)=>49620+i)
@@ -117,9 +117,12 @@ export function expectedAssemblySideProfile(projectName){
  if(projectName==="NUCLEO-F401RE Lower GPIO Proto R1")return {CN7:"Top",CN10:"Top"}
  return {}
 }
-export async function bridgeExportBoard(port,windowId,boardName,projectName=null){
+export async function bridgeExportBoard(port,windowId,boardName,projectName=null,projectDir=null){
  const verification=await bridgeVerifyBoard(port,windowId,boardName)
+ const sourceBefore=projectDir?await hashProjectDir(projectDir):null
  const result=await exportFiles(port,windowId,boardName)
+ const sourceAfter=projectDir?await hashProjectDir(projectDir):null
+ if(sourceBefore&&sourceAfter&&sourceBefore.sourceRevision!==sourceAfter.sourceRevision)throw new Error("Native project changed during manufacturing export; discard this bundle and export again from a saved revision.")
  const files=Object.create(null)
  for(const [key,value] of Object.entries(result.files??{})){
   if(!value)continue
@@ -148,9 +151,12 @@ export async function bridgeExportBoard(port,windowId,boardName,projectName=null
  warnings.push("EasyEDA Pro manufacture-data APIs are beta preview APIs; validate exported files independently.")
  warnings.push("JLCPCB stock, exact assembly eligibility, THT process, component-side orientation and final upload preview have not been confirmed.")
  warnings.push("Physical fit, electrical, thermal and safety validation remain the engineer's responsibility.")
- const manifest={schema:"pcb-workbench-bridge-export/v1",projectName,boardName,expectedSideByRef,engine:"EasyEDA Pro API Gateway / Bridge Server",engineVersion:result.engineVersion,generatedAt:new Date().toISOString(),verification,parity,gerberFiles,optionalErrors:result.optionalErrors,blockers,warnings,orderReady:false,status:blockers.length?"BLOCKED":"REVIEW_ONLY"}
+ if(!files["Board.step"])warnings.push("STEP export is unavailable; mechanical 3D review must use the native CAD project.")
+ if(!files["Netlist.net"])blockers.push("Native schematic netlist export is unavailable; electrical connectivity parity cannot be independently checked.")
+ const outputHashes=Object.fromEntries(Object.entries(files).map(([name,data])=>[name,createHash("sha256").update(data).digest("hex")]))
+ const manifest={schema:"pcb-workbench-bridge-export/v1",projectName,boardName,expectedSideByRef,sourceRevision:sourceAfter?.sourceRevision??null,sourceFileHashes:sourceAfter?.hashes??null,engine:"EasyEDA Pro API Gateway / Bridge Server",engineVersion:result.engineVersion,generatedAt:new Date().toISOString(),verification,parity,gerberFiles,outputHashes,optionalErrors:result.optionalErrors,blockers,warnings,orderReady:false,status:blockers.length?"BLOCKED":"REVIEW_ONLY"}
  files["REVIEW_ONLY.json"]=new TextEncoder().encode(JSON.stringify(manifest,null,2))
- files["DO_NOT_ORDER.txt"]=new TextEncoder().encode("REVIEW ONLY — NOT APPROVED FOR ORDER.\nConfirm JLCPCB stock and assembly eligibility, BOM/CPL orientation, all DRC/physical checks and JLCPCB upload preview before ordering.\n")
+ files["DO_NOT_ORDER.txt"]=new TextEncoder().encode("REVIEW ONLY — NOT APPROVED FOR ORDER.\nConfirm JLCPCB stock and assembly eligibility, BOM/CPL orientation, netlist parity, all DRC/physical checks and JLCPCB upload preview before ordering.\n")
  return {files,manifest,zip:zipSync(files,{level:6}),verification}
 }
 
