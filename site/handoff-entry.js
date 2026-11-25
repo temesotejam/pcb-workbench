@@ -64,6 +64,30 @@ function nativePanel(p){
  inspectButton.onclick=async()=>{try{download(JSON.stringify(await inspectSource(nativeSource(entries,board)),null,2),board.key+'-editable-records.json')}catch(e){status.textContent=e.message}}
  const lbl=add(p,'p','AI差分JSONを選択'),file=add(lbl,'input');file.type='file';file.accept='.json,application/json'
  const status=add(p,'p','原本は未変更です。')
+ if(board.nativeBoardName==="NUCLEO-F401RE Rev1.5"){
+  const underside=add(p,'button','CN7 / CN10 を裏面へ移動（確認付き）')
+  underside.onclick=async()=>{
+   underside.disabled=true
+   try{
+    const source=nativeSource(entries,board),inspection=await inspectSource(source)
+    const targets=inspection.documents.filter(x=>x.docType==="PCB"&&x.recordType==="COMPONENT"&&["CN7","CN10"].includes(x.designator))
+    if(targets.length!==2)throw new Error("CN7/CN10 のネイティブ部品レコードを一意に特定できません")
+    if(targets.some(x=>![1,2].includes(x.fields.layerId)))throw new Error("CN7/CN10 の現在の layerId が不明です")
+    const changes=targets.filter(x=>x.fields.layerId===1).map(x=>({
+     path:x.path,baseSha256:x.baseSha256,docType:x.docType,docUuid:x.docUuid,recordType:x.recordType,recordId:x.recordId,
+     expect:{layerId:1},set:{layerId:2}
+    }))
+    if(!changes.length){status.textContent="CN7/CN10 は既にBottom layerです。";return}
+    const refs=targets.map(x=>x.designator+" : "+(x.fields.layerId===1?"Top → Bottom":"Bottom（変更なし）")).join("\\n")
+    if(!confirm("上基板の実装面を変更します。\\n"+refs+"\\n\\n回転角は変更しません。適用後にERC/DRCとJLCPCBの底面配置・回転プレビューを必ず確認してください。\\n\\n続行しますか？"))return
+    const patch={schema:"pcb-workbench-native-patch/v1",changes}
+    const result=await applyPatchText(JSON.stringify(patch))
+    const rv=result.updateResult?.runtimeVerification
+    status.textContent=result.liveApplied?(rv?.passed?"CN7/CN10のBottom配置を反映し、EasyEDA再読込を確認しました。ERC/DRCを再実行してください。":"書込み後の再読込確認が未完了です。発注データは使わず詳細を確認してください。"):"Bottom配置パッチをブラウザ内に適用しました。出力ZIPをEasyEDAへ読み込んでください。"
+   }catch(e){status.textContent="裏面配置変更を中止: "+e.message}
+   finally{underside.disabled=false}
+  }
+ }
  file.onchange=async()=>{try{const f=file.files?.[0];if(!f)return;if(f.size>5*1024*1024)throw new Error('Patch too large');const patchText=await f.text();const result=await applyPatchText(patchText);const rv=result.updateResult?.runtimeVerification;status.textContent=result.liveApplied?(rv?.passed?'EasyEDA Proへの反映とPCB・回路図の再読込確認が完了しました。ERC / DRCを再実行してください。':'ファイル書込みは完了しましたが、EDA側の再読込確認は未完了です。発注データは使わず、詳細を確認してください。'):'差分をブラウザ内に適用し、編集用ZIPを出力しました。EasyEDAへの反映には接続・アタッチが必要です。'}catch(e){status.textContent='差分適用中止: '+e.message}}
  add(p,'h2','変更前の製造資料')
  add(p,'p','既存Gerberと形式整理済みBOM/CPLを照合用として出力します。上下実装、在庫、ERC等は未承認。発注用として使用しないでください。')
