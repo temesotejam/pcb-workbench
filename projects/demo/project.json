@@ -29,5 +29,6 @@
       "rotationOffset": null,
       "reviewed": false
     }
-  ]
+  ],
+  "allowedWarnings": []
 }
