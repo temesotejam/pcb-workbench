@@ -218,21 +218,21 @@ export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPat
   "await new Promise(r=>setTimeout(r,8000));return {saved:true};"
  ].join("\n")
  const afterWrite=async({expectedDocuments})=>{
-  const pcbDoc=expectedDocuments.find(x=>x.docType==="PCB")
+  const expectedPcbDocuments=expectedDocuments.filter(x=>x.docType==="PCB")
   const expectedPages=expectedDocuments.filter(x=>x.docType==="SCH_PAGE")
-  if(!pcbDoc||!expectedPages.length)throw new Error("Native source package lacks the PCB or schematic page documents required for live verification.")
-  const args={boardName,pcbUuid:pcbDoc.uuid,expectedPcbComponents:pcbDoc.componentCount,expectedPages:expectedPages.map(x=>({uuid:x.uuid,components:x.componentCount,wires:x.wireCount}))}
+  if(!expectedPcbDocuments.length||!expectedPages.length)throw new Error("Native source package lacks the PCB or schematic page documents required for live verification.")
+  const args={boardName,expectedPcbDocuments,expectedPages:expectedPages.map(x=>({uuid:x.uuid,components:x.componentCount,wires:x.wireCount}))}
   const code=[
    "const args="+JSON.stringify(args)+";",
    "const boards=await eda.dmt_Board.getAllBoardsInfo();const b=boards.find(x=>x.name===args.boardName);",
-   "if(!b||b.pcb?.uuid!==args.pcbUuid)throw new Error('The active PCB identity does not match the patched native source.');",
+   "if(!b||!b.pcb?.uuid)throw new Error('The active PCB identity is missing.');const expectedPcb=args.expectedPcbDocuments.find(x=>x.uuid===b.pcb.uuid);if(!expectedPcb)throw new Error('The active PCB identity does not match the patched native source.');",
    "await new Promise(r=>setTimeout(r,8000));const pcbTab=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(!pcbTab)throw new Error('Could not reopen patched PCB.');",
    "await new Promise(r=>setTimeout(r,1500));const pcbComponents=await eda.pcb_PrimitiveComponent.getAll();",
-   "if(pcbComponents.length!==args.expectedPcbComponents)throw new Error('PCB reload component count mismatch: expected '+args.expectedPcbComponents+', got '+pcbComponents.length);",
-   "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo();const linked=pages.filter(p=>p.parentSchematicUuid===b.schematic?.uuid);const pageChecks=[];",
-   "for(const expected of args.expectedPages){const page=linked.find(p=>p.uuid===expected.uuid);if(!page){pageChecks.push({uuid:expected.uuid,passed:false,error:'Page missing from active schematic'});continue;}const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){pageChecks.push({uuid:page.uuid,passed:false,error:'Could not reopen schematic page'});continue;}await new Promise(r=>setTimeout(r,700));const components=await eda.sch_PrimitiveComponent.getAll();const wires=await eda.sch_PrimitiveWire.getAllPrimitiveId();const passed=components.length===expected.components&&wires.length===expected.wires;pageChecks.push({uuid:page.uuid,expectedComponents:expected.components,actualComponents:components.length,expectedWires:expected.wires,actualWires:wires.length,passed});}",
+   "if(pcbComponents.length!==expectedPcb.componentCount)throw new Error('PCB reload component count mismatch: expected '+expectedPcb.componentCount+', got '+pcbComponents.length);",
+   "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo();const linked=pages.filter(p=>p.parentSchematicUuid===b.schematic?.uuid);const expectedByUuid=new Map(args.expectedPages.map(x=>[x.uuid,x]));const linkedExpected=linked.map(p=>expectedByUuid.get(p.uuid)).filter(Boolean);const pageChecks=[];if(!linked.length||linkedExpected.length!==linked.length)throw new Error('Linked schematic pages do not match the native source package.');",
+   "for(const expected of linkedExpected){const page=linked.find(p=>p.uuid===expected.uuid);if(!page){pageChecks.push({uuid:expected.uuid,passed:false,error:'Page missing from active schematic'});continue;}const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){pageChecks.push({uuid:page.uuid,passed:false,error:'Could not reopen schematic page'});continue;}await new Promise(r=>setTimeout(r,700));const components=await eda.sch_PrimitiveComponent.getAll();const wires=await eda.sch_PrimitiveWire.getAllPrimitiveId();const passed=components.length===expected.components&&wires.length===expected.wires;pageChecks.push({uuid:page.uuid,expectedComponents:expected.components,actualComponents:components.length,expectedWires:expected.wires,actualWires:wires.length,passed});}",
    "const passed=pageChecks.length===args.expectedPages.length&&pageChecks.every(x=>x.passed);if(!passed)throw new Error('Schematic reload object-count verification failed: '+JSON.stringify(pageChecks));",
-   "return {passed:true,pcb:{expectedComponents:args.expectedPcbComponents,actualComponents:pcbComponents.length},schematics:pageChecks,verifiedAt:new Date().toISOString()};"
+   "return {passed:true,pcb:{expectedComponents:expectedPcb.componentCount,actualComponents:pcbComponents.length},schematics:pageChecks,verifiedAt:new Date().toISOString()};"
   ].join("\n")
   return await bridgeExecute(port,windowId,code,120000)
  }
