@@ -88,14 +88,14 @@ function snapLabelsAndWiresToSymbolPins(source:string){
       const prior=replacements.get(key)
       if(prior&&(Math.abs(prior.pin.x-x)>0.01||Math.abs(prior.pin.y-y)>0.01))continue
       const connected=wires.filter(w=>(
-        Math.abs(w.a.x-old.x)<=0.01&&Math.abs(w.a.y-old.y)<=0.01
+        Math.abs(w.a.x-x)<=0.01&&Math.abs(w.a.y-y)<=0.01
       )||(
-        Math.abs(w.b.x-old.x)<=0.01&&Math.abs(w.b.y-old.y)<=0.01
+        Math.abs(w.b.x-x)<=0.01&&Math.abs(w.b.y-y)<=0.01
       ))
       let labelTarget={x,y}
       if(connected.length===1){
         const w=connected[0]
-        labelTarget=Math.abs(w.a.x-old.x)<=0.01&&Math.abs(w.a.y-old.y)<=0.01?w.b:w.a
+        labelTarget=Math.abs(w.a.x-x)<=0.01&&Math.abs(w.a.y-y)<=0.01?w.b:w.a
       }
       replacements.set(key,{pin:{x,y},label:labelTarget})
       moveDetails.push({name:old.name,from:{x:old.x,y:old.y},pin:{x,y},to:labelTarget,connectedWireCount:connected.length})
