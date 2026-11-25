@@ -87,7 +87,7 @@ async function projectRoot(exe){
  throw new Error("No EasyEDA Pro project directory found. Check Documents/EasyEDA-Pro/config.json and APP_PROJECT_DIR.")
 }
 export async function importProject(exe,zipBytes){const engine=await detectCli(exe);if(!engine.versionSupported)throw new Error("EasyEDA Pro desktop CLI 4.1.60 or newer is required; detected "+(engine.version??"unknown"));const info=validateProjectFiles(unzipSync(zipBytes)),root=await projectRoot(exe),workspace=path.join(root,"PCBWorkbenchSessions",randomUUID()),projectDir=path.join(workspace,info.projectName);let sessionId=null;await mkdir(projectDir,{recursive:true});try{for(const [name,data] of Object.entries(info.entries)){const target=path.resolve(projectDir,name);if(!target.startsWith(projectDir+path.sep))throw new Error("Unsafe target path");await mkdir(path.dirname(target),{recursive:true});await writeFile(target,data,{flag:"wx"})}const projectPath=path.join(projectDir,info.projectFile),opened=await runCli(exe,["open","--path",projectPath,"--headless","true"]);sessionId=opened.sessionId;if(!sessionId)throw new Error("EasyEDA Pro did not return a project session");const inspect=await invoke(exe,sessionId,"const boards=await eda.dmt_Board.getAllBoardsInfo(); const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo(); return {version:eda.sys_Environment.getEditorCurrentVersion(),isClient:eda.sys_Environment.isClient(),isHalfOfflineMode:eda.sys_Environment.isHalfOfflineMode(),project:await eda.dmt_Project.getCurrentProjectInfo(),boards:boards.map(b=>({name:b.name,uuid:b.uuid,pcbUuid:b.pcb?.uuid??null,schematicUuid:b.schematic?.uuid??null})),pages:pages.map(p=>({name:p.name,uuid:p.uuid,parentSchematicUuid:p.parentSchematicUuid}))};");if(inspect.isClient!==true)throw new Error('EasyEDA Pro runtime is not the desktop client');const runtimeVersion=parseVersion('EasyEDA Pro '+inspect.version);if(!versionAtLeast(runtimeVersion,[4,1,60]))throw new Error('EasyEDA Pro desktop 4.1.60 or newer is required; runtime reports '+inspect.version);if(!inspect.boards?.length)throw new Error("EasyEDA opened the project but found no boards");const sourceHashes=await hashProjectDir(projectDir);return {sessionId,projectName:info.projectName,projectPath,workspace,engineVersion:inspect.version,boards:inspect.boards,pages:inspect.pages,sourceFiles:Object.keys(info.entries).length,sourcePaths:Object.keys(info.entries),sourceBytes:Object.values(info.entries).reduce((n,b)=>n+b.byteLength,0),sourceHashes}}catch(e){if(sessionId){try{await runCli(exe,["session","close","--session",sessionId,"--destroy"],{timeout:30000})}catch{}}await rm(workspace,{recursive:true,force:true});throw e}}
-export async function updateProject(exe,zipBytes,active){
+export async function writeProjectFiles(zipBytes,active){
  const info=validateProjectFiles(unzipSync(zipBytes))
  if(info.projectName!==active.projectName)throw new Error("Project name mismatch")
  const before=new Set(active.sourcePaths??[]),after=new Set(Object.keys(info.entries))
@@ -100,7 +100,14 @@ export async function updateProject(exe,zipBytes,active){
   try{const existing=await readFile(target);same=existing.equals(Buffer.from(data))}catch{}
   if(!same){await writeFile(target,data);updated.push(name)}
  }
- if(updated.length){
+ const sourceHashes=await hashProjectDir(projectDir)
+ active.sourceHashes=sourceHashes
+ active.lastVerification=null
+ return {updatedFiles:updated,sourceHashes,projectDir}
+}
+export async function updateProject(exe,zipBytes,active){
+ const result=await writeProjectFiles(zipBytes,active)
+ if(result.updatedFiles.length){
   const oldSession=active.sessionId
   active.sessionId=null
   if(oldSession){try{await closeProject(exe,oldSession)}catch{}}
@@ -118,10 +125,7 @@ export async function updateProject(exe,zipBytes,active){
    throw e
   }
  }
- const sourceHashes=await hashProjectDir(projectDir)
- active.sourceHashes=sourceHashes
- active.lastVerification=null
- return {updatedFiles:updated,sourceHashes,sessionReopened:updated.length>0,engineVersion:active.engineVersion,boards:active.boards,verificationInvalidated:true}
+ return {...result,sessionReopened:result.updatedFiles.length>0,engineVersion:active.engineVersion,boards:active.boards,verificationInvalidated:true}
 }
 export async function closeProject(exe,sessionId){if(!sessionId)return false;await runCli(exe,["session","close","--session",sessionId,"--destroy"],{timeout:30000});return true}
 export async function verifyBoard(exe,sessionId,boardName){

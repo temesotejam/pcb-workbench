@@ -68,7 +68,7 @@ test("live project update writes only changed native files and enforces file-set
   }
   const active={projectName:"Demo",projectPath:path.join(projectDir,"Demo.eprj3"),sourcePaths:Object.keys(initial)}
   const next={...initial,"pcb/Board.epcb2":enc("new")}
-  const result=await updateProject(zipSync(next),active)
+  const result=await writeProjectFiles(zipSync(next),active)
   assert.deepEqual(result.updatedFiles,["pcb/Board.epcb2"])
   assert.equal((await readFile(path.join(projectDir,"pcb","Board.epcb2"))).toString(),"new")
   await assert.rejects(updateProject(zipSync({...next,"extra.evar":enc("x")}),active),/file set/)
