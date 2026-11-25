@@ -43,8 +43,11 @@ async function applyPatchText(patchText){
  const patchedEntries={...entries}
  for(const [rel,data] of Object.entries(r.source))patchedEntries[board.projectBase+rel]=data
  const patched=zipSync(r.source)
- if(agentImport){const result=await localAgent('update',patched,true,{baseHashes});agentImport.sourceUpdated=true;agentImport.updateResult=result}
+ const liveApplied=!!agentImport
+ let updateResult=null
+ if(liveApplied){updateResult=await localAgent('update',patched,true,{baseHashes});agentImport.sourceUpdated=true;agentImport.updateResult=updateResult}
  entries=patchedEntries;dirty=true;agentVerification=null
+ return {liveApplied,updateResult}
  download(zipSync({...r.source,'PATCH_REPORT.json':new TextEncoder().encode(JSON.stringify(r.report,null,2))}),board.key+'-PATCHED-UNVERIFIED.zip','application/zip')
 }
 function nativePanel(p){
@@ -57,7 +60,7 @@ function nativePanel(p){
  inspectButton.onclick=async()=>{try{download(JSON.stringify(await inspectSource(nativeSource(entries,board)),null,2),board.key+'-editable-records.json')}catch(e){status.textContent=e.message}}
  const lbl=add(p,'p','AI差分JSONを選択'),file=add(lbl,'input');file.type='file';file.accept='.json,application/json'
  const status=add(p,'p','原本は未変更です。')
- file.onchange=async()=>{try{const f=file.files?.[0];if(!f)return;if(f.size>5*1024*1024)throw new Error('Patch too large');const patchText=await f.text();await applyPatchText(patchText);}catch(e){status.textContent='差分適用中止: '+e.message}}
+ file.onchange=async()=>{try{const f=file.files?.[0];if(!f)return;if(f.size>5*1024*1024)throw new Error('Patch too large');const patchText=await f.text();const result=await applyPatchText(patchText);status.textContent=result.liveApplied?'EasyEDA Proの作業中プロジェクトへ反映しました。必ず再度ERC / DRCを実行してください。':'差分をブラウザ内に適用し、編集用ZIPを出力しました。EasyEDAへの反映には接続・アタッチが必要です。'}catch(e){status.textContent='差分適用中止: '+e.message}}
  add(p,'h2','変更前の製造資料')
  add(p,'p','既存Gerberと形式整理済みBOM/CPLを照合用として出力します。上下実装、在庫、ERC等は未承認。発注用として使用しないでください。')
  const b=add(p,'button','製造確認用ZIP（発注不可）')
