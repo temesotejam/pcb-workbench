@@ -1,14 +1,50 @@
 # PCB Workbench
 
-AI-operated, browser-based PCB design and manufacturing workspace.
+AI-operated, browser-based PCB design and manufacturing workspace for JLCPCB.
 
-The user specifies requirements in chat; the AI edits version-controlled design sources, reviews parts, builds and validates the board. The browser is for inspection and downloading manufacturing outputs. The user alone uploads files to JLCPCB and places orders. No purchase or payment automation.
+ユーザーはチャットで設計を指示し、AIがGitHubの設計ソースを編集・検証します。ユーザーはブラウザで結果を確認し、最終的なJLCPCBへのアップロード、発注、決済だけを行います。
+
+## Current status: v0.1 integration coupon — NOT READY FOR ORDER
+
+[![Build](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml/badge.svg)](https://github.com/temesotejam/pcb-workbench/actions/workflows/build.yml)
+
+- [GitHub Actions](https://github.com/temesotejam/pcb-workbench/actions): engine build, KiCad checks and draft export.
+- [Web viewer](https://temesotejam.github.io/pcb-workbench/): available after the first successful Pages deployment.
+- [Pages settings](https://github.com/temesotejam/pcb-workbench/settings/pages): select GitHub Actions as Source once if not already configured.
+- [Roadmap](docs/ROADMAP.md): implementation milestones and acceptance criteria.
+
+## Design pipeline
+
+1. Edit a project's `design.tsx` (tscircuit) and `project.json` (metadata and curated assembly part list).
+2. Generate Circuit JSON, schematic and PCB SVG, and native KiCad files.
+3. Use KiCad CLI for independent ERC, DRC including schematic parity, and real manufacturing exports.
+4. Convert KiCad placements to JLCPCB CSV headers, check exact designator parity and flag unverified part/rotation data.
+5. Inspect reports in the browser. Draft manufacturing files are available only in the DRAFT Actions artifact, never published as order-ready files.
+
+## Development
+
+No local CAD is needed for ordinary use. GitHub Actions runs on changes to main and supports manual reruns. For optional local development with Bun, Python 3 and KiCad 10:
+
+```sh
+bun install
+python3 -m unittest discover -s tests -v
+bun run build
+python3 scripts/fabricate.py dist
+python3 -m http.server 8000 --directory dist
+```
 
 ## Release contract
-- Schematic first, PCB second; every populated part must be identified by an exact LCSC part number and reviewed against its datasheet and JLCPCB assembly availability.
-- Generate real KiCad-compatible source and previews, then use KiCad CLI for independent ERC/DRC and fabrication exports.
-- JLCPCB output: Gerber ZIP with Excellon drills when required, BOM CSV, CPL CSV. Review actual part centroid, side, rotation, footprint/pin mapping and assembly eligibility; never equate a passing DRC with manufacturing approval.
-- Preserve Git history. Public demo only; sensitive project sources must not be published without permission.
-- Demo data is not approved for production. Fail closed when verification is incomplete.
 
-See the planned implementation and tests in subsequent commits.
+- Schematic first, PCB second; every populated part must be identified by an exact LCSC part number and reviewed against its datasheet and JLCPCB assembly availability.
+- Gerber ZIP with appropriate drill files, BOM CSV and CPL CSV must be generated from the same reviewed revision.
+- Review actual part centroid, side, rotation, footprint/pin mapping, electrical behavior, manufacturing constraints and assembly eligibility. Never equate a passing DRC with manufacturing approval.
+- Validate real files in JLCPCB's upload/preview flow before calling them order-ready.
+- Preserve Git history. This is a public repository; do not publish sensitive designs or credentials.
+- Production release is intentionally disabled until the required reviews and tests are implemented. No order or payment automation.
+
+## References
+
+- https://docs.tscircuit.com/
+- https://github.com/tscircuit/circuit-json-to-kicad
+- https://docs.kicad.org/10.0/en/cli/cli.html
+- https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad
