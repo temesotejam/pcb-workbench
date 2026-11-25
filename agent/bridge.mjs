@@ -132,6 +132,7 @@ export async function bridgeExportBoard(port,windowId,boardName,projectName=null
  }
  for(const required of ["Gerber.zip","BOM.csv","CPL.csv"])if(!files[required])throw new Error("Required native export missing: "+required)
  const blockers=[],warnings=[]
+ if(!sourceAfter?.sourceRevision)blockers.push("Native source revision could not be captured; this export is not bound to a verified project snapshot.")
  if(!verification.pcb?.passed)blockers.push("PCB DRC contains errors, unknown violations or an unavailable detailed result.")
  if(!verification.schematicPassed)blockers.push("Schematic ERC/DRC contains errors, unknown violations or an unavailable detailed result.")
  for(const item of verification.pcb?.warnings??[])warnings.push("PCB warning: "+(item.ruleName??item.rule??item.explanation??JSON.stringify(item)))
