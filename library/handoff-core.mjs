@@ -23,7 +23,7 @@ export async function inspectHandoff(entries){
    requireIt(upperProjectBase&&upperProjectName,'Upper project must be inspected before lower project')
    requireIt(verify.upperProject===upperProjectName,'Lower board references a different upper project')
    const unchanged=verify.unchangedUpperFiles;requireIt(unchanged&&typeof unchanged==='object'&&Object.keys(unchanged).length>0,'Missing unchanged upper source hashes')
-   for(const [rel,h] of Object.entries(unchanged)){const path=upperProjectBase+rel.replace(/\\\\/g,'/');requireIt(await hex(bytes(path))===h.toLowerCase(),'Lower/upper source pairing mismatch: '+path)}
+   for(const [rel,h] of Object.entries(unchanged)){const path=upperProjectBase+rel.replace(/\\/g,'/');requireIt(await hex(bytes(path))===h.toLowerCase(),'Lower/upper source pairing mismatch: '+path)}
    upperSourceLinkVerified=true
   }requireIt(pcbInfo.length===1,'Expected exactly one PCB');const pcb=pcbInfo[0],nativeBoard=Object.values(profile.boards??{}).find(b=>b.uuid===pcb.board);requireIt(nativeBoard?.title,'Missing native EasyEDA board name');const pcbPath=base+'pcb/'+pcb.title+'.epcb2',raw=nativeDoc(text(pcbPath),'PCB',pcb.uuid);const a=attrs(raw),comp=raw.filter(r=>r.type==='COMPONENT'),byId=new Map(comp.map(r=>[r.id,a.get(r.id)?.Designator]));
   const ps=placements.filter(r=>r.Board===key),pi=pins.filter(r=>r.Board===key),ns=nets.filter(r=>r.Board===key);requireIt(ps.length===verify.parts&&pi.length===verify.pinsChecked,'Recorded count mismatch: '+key);requireIt(same(comp.map(r=>byId.get(r.id)),ps.map(r=>r.Ref)),'Native PCB reference mismatch: '+key);
