@@ -5,7 +5,7 @@ import os from "node:os"
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { zipSync } from "fflate"
-import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles, expectedAssemblySideProfile, classifyDrcItems, nativeDocumentCounts } from "./bridge.mjs"
+import { parseBridgeEnvelope, normalizeWindows, bridgeHealthMatches, validateNativePatchTarget, applyNativePatchFiles, expectedAssemblySideProfile, classifyDrcItems, nativeDocumentCounts, buildJlcpcbReviewBundle } from "./bridge.mjs"
 
 test("Bridge response envelopes unwrap values and reject failures",()=>{
  assert.deepEqual(parseBridgeEnvelope({success:true,result:{ok:1}}),{ok:1})
@@ -150,4 +150,46 @@ test("Successful live patch returns explicit runtime reload evidence",async()=>{
   assert.deepEqual(result.updatedFiles,["pcb/Board.epcb2"])
   await rm(result.backupDir,{recursive:true,force:true})
  }finally{await rm(root,{recursive:true,force:true})}
+})
+
+test("JLCPCB review bundle contains normalized BOM/CPL, Gerbers, hashes and a fail-closed manifest",()=>{
+ const gerber=zipSync({
+  "board.GTL":enc("top copper"),"board.GBL":enc("bottom copper"),
+  "board.GTS":enc("top mask"),"board.GBS":enc("bottom mask"),
+  "board.GKO":enc("outline"),"board.DRL":enc("drill"),"board.GTP":enc("top paste")
+ })
+ const result=buildJlcpcbReviewBundle({
+  "Gerber.zip":gerber,
+  "BOM.csv":enc("Quantity,Designator,Comment,Footprint,LCSC Part #\\r\\n1,R1,10k,0603,C17414\\r\\n"),
+  "CPL.csv":enc("Designator,Mid X,Mid Y,Rotation,Layer,SMD\\r\\nR1,1.2,-2.3,90,Top,Yes\\r\\n"),
+  "Board.step":enc("step"),"Netlist.net":enc("netlist")
+ },{
+  verification:{pcb:{passed:true,warnings:[]},schematicPassed:true,schematics:[]},
+  projectName:"Integration coupon",boardName:"Coupon",engineVersion:"4.1.105",
+  sourceRevision:"revision-123",sourceFileHashes:{"board.epcb2":"a".repeat(64)}
+ })
+ assert.equal(result.manifest.orderReady,false)
+ assert.equal(result.manifest.status,"REVIEW_ONLY")
+ assert.equal(result.manifest.sourceRevision,"revision-123")
+ assert.ok(result.manifest.outputHashes["Gerber.zip"])
+ assert.ok(result.manifest.outputHashes["BOM.csv"])
+ assert.ok(result.files["JLCPCB_UPLOAD_GUIDE.txt"])
+ assert.ok(result.files["DO_NOT_ORDER.txt"])
+ assert.equal(result.manifest.parity.referenceParity,true)
+})
+test("JLCPCB review bundle blocks missing source revision and DRC failures",()=>{
+ const gerber=zipSync({"board.GTL":enc("x"),"board.GBL":enc("x"),"board.GTS":enc("x"),"board.GBS":enc("x"),"board.GKO":enc("x"),"board.DRL":enc("x")})
+ const result=buildJlcpcbReviewBundle({
+  "Gerber.zip":gerber,
+  "BOM.csv":enc("Quantity,Designator,Comment,Footprint,LCSC Part #\\r\\n1,R1,10k,0603,C17414\\r\\n"),
+  "CPL.csv":enc("Designator,Mid X,Mid Y,Rotation,Layer\\r\\nR1,1,2,90,Top\\r\\n")
+ },{
+  verification:{pcb:{passed:false,warnings:[]},schematicPassed:false,schematics:[]},
+  boardName:"Coupon"
+ })
+ assert.equal(result.manifest.status,"BLOCKED")
+ assert.ok(result.manifest.blockers.some(x=>x.includes("source revision")))
+ assert.ok(result.manifest.blockers.some(x=>x.includes("PCB DRC")))
+ assert.ok(result.manifest.blockers.some(x=>x.includes("schematic ERC")))
+ assert.equal(result.manifest.orderReady,false)
 })
