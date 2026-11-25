@@ -18,8 +18,9 @@ test("version gate uses numeric segments",()=>{
  assert.equal(versionAtLeast([4,1,60]),true);assert.equal(versionAtLeast([4,1,59]),false)
  assert.equal(versionAtLeast([4,2,0]),true)
 })
-test("CSV parser handles commas, escaped quotes and CRLF",()=>{
+test("CSV parser handles comma CSV, quoted commas, escaped quotes, CRLF and tab-separated EasyEDA BOM",()=>{
  assert.deepEqual(parseCsv('A,B\r\n"x,y","z""z"\r\n'),[{A:"x,y",B:'z"z'}])
+ assert.deepEqual(parseCsv('No.\tQuantity\tComment\tDesignator\tFootprint\tSupplier Part\tSupplier\r\n1\t2\t10k\tR1,R2\tR0603\tC17414\tLCSC\r\n'),[{ "No.":"1",Quantity:"2",Comment:"10k",Designator:"R1,R2",Footprint:"R0603","Supplier Part":"C17414",Supplier:"LCSC"}])
 })
 test("project package must have one EPRJ3 and native docs",()=>{
  const p={"Demo.eprj3":enc(JSON.stringify({profile:{}})),"pcb/Board.epcb2":enc("x"),"sch/Main/Page.esch2":enc("x")}
