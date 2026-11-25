@@ -42,6 +42,22 @@ export async function inspectSource(source){
  }
  return {schema:'pcb-workbench-native-records/v1',documents,unitNotes:'PCB coordinates mil; schematic coordinates native 10mil; native angle conventions'}
 }
+export function inspectNetAssignments(source,knownNetNames=[]){
+ const known=new Set(knownNetNames.filter(x=>typeof x==='string'&&x.length))
+ const assignments=[],missing=[],unknown=[]
+ for(const [path,bytes] of Object.entries(source)){
+  if(!path.endsWith('.epcb2'))continue
+  for(const {doc,h,v} of records(bytes).items){
+   if(doc?.type!=='PCB'||!['LINE','VIA'].includes(h.type))continue
+   const name=typeof v.netName==='string'?v.netName:''
+   const item={path,recordType:h.type,recordId:h.id,netName:name}
+   assignments.push(item)
+   if(!name)missing.push(item)
+   else if(known.size&&!known.has(name))unknown.push(item)
+  }
+ }
+ return {total:assignments.length,assigned:assignments.length-missing.length,missing,unknown,knownNetCount:known.size,complete:missing.length===0&&unknown.length===0}
+}
 export async function applyPatch(source,patch){
  check(patch?.schema==='pcb-workbench-native-patch/v1'&&Array.isArray(patch.changes)&&patch.changes.length>0&&patch.changes.length<=1000,'Invalid patch')
  const output={...source},seen=new Set(),log=[]
@@ -55,7 +71,7 @@ export async function applyPatch(source,patch){
   for(const field of fields){
    const value=c.set[field];check(Object.hasOwn(v,field)&&v[field]===c.expect[field],'Stale field: '+field)
    if(field==='value')check(typeof value==='string'&&value.length<=2000,'Invalid text')
-   else if(field==='netName')check(typeof value==='string'&&value.length>0&&value.length<=256&&!/[\\r\\n\\0]/.test(value),'Invalid net name')
+   else if(field==='netName')check(typeof value==='string'&&value.length>0&&value.length<=256&&!/[\r\n\0]/.test(value),'Invalid net name')
    else check(typeof value==='number'&&Number.isFinite(value)&&(!['width','viaDiameter','holeDiameter'].includes(field)||value>0),'Invalid number')
    if(c.docType==='PCB'&&c.recordType==='COMPONENT'&&field==='layerId')check(value===1||value===2,'PCB component layerId must be 1 (Top) or 2 (Bottom)')
   }
