@@ -1,5 +1,5 @@
 import {test,expect} from 'bun:test'
-import {applyPatch,hash,records,reviewFiles} from './native-patch.mjs'
+import {applyPatch,hash,records,reviewFiles,inspectNetAssignments} from './native-patch.mjs'
 const enc=new TextEncoder(),dec=new TextDecoder()
 const row=(h,v)=>JSON.stringify(h)+'||'+(v===null?'':JSON.stringify(v))+'|\r\n'
 const source={'pcb/a.epcb2':enc.encode(row({type:'DOCHEAD'},{docType:'PCB',uuid:'p'})+row({type:'LINE',id:'l',ticket:2},{width:10,netName:'A'})+row({type:'POUR',id:'z'},{path:[[1,2,3]]})+row({type:'LINE',id:'deleted'},null))}
@@ -69,4 +69,19 @@ test('via net assignment is editable but rejects empty or multiline names',async
  await expect(applyPatch(pcb,p)).rejects.toThrow('Invalid net name')
  p.changes[0].set.netName='BAD\\nNET'
  await expect(applyPatch(pcb,p)).rejects.toThrow('Invalid net name')
+})
+
+test('native net assignment inspection reports missing and unknown track/via nets',()=>{
+ const pcb={'pcb/board.epcb2':enc.encode(
+  row({type:'DOCHEAD'},{docType:'PCB',uuid:'p'})+
+  row({type:'LINE',id:'a'},{startX:0,startY:0,endX:10,endY:0,width:2,netName:'GND'})+
+  row({type:'LINE',id:'b'},{startX:0,startY:1,endX:10,endY:1,width:2})+
+  row({type:'VIA',id:'c'},{centerX:5,centerY:5,viaDiameter:24,holeDiameter:12,netName:'TYPO'})
+ )}
+ const result=inspectNetAssignments(pcb,['GND','3V3'])
+ expect(result.total).toBe(3)
+ expect(result.assigned).toBe(2)
+ expect(result.missing.map(x=>x.recordId)).toEqual(['b'])
+ expect(result.unknown.map(x=>x.recordId)).toEqual(['c'])
+ expect(result.complete).toBe(false)
 })
