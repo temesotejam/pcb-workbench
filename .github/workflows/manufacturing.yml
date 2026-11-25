@@ -1,0 +1,58 @@
+name: Manufacturing export verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'projects/**'
+      - 'library/catalog.json'
+      - 'library/parts.tsx'
+      - 'library/footprints.ts'
+      - 'scripts/build.tsx'
+      - 'scripts/fabricate.py'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/manufacturing.yml'
+  pull_request:
+    paths:
+      - 'projects/**'
+      - 'library/catalog.json'
+      - 'library/parts.tsx'
+      - 'library/footprints.ts'
+      - 'scripts/build.tsx'
+      - 'scripts/fabricate.py'
+      - 'package.json'
+      - 'bun.lock'
+      - '.github/workflows/manufacturing.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  manufacture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.0'
+      - name: Install circuit engine
+        run: bun install
+      - name: Generate circuit, schematic and PCB sources
+        run: bun run build
+      - name: Install official KiCad 10 stable packages
+        run: |
+          sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends kicad kicad-symbols kicad-footprints
+          kicad-cli version
+      - name: Independently verify and generate draft JLCPCB files
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python3 scripts/fabricate.py dist
+      - name: Upload draft manufacturing files and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcb-workbench-DRAFT-DO-NOT-ORDER
+          path: dist/projects/*/draft/
+          if-no-files-found: warn
