@@ -8,7 +8,7 @@
 - Guarded AI patch application: the browser calculates SHA-256 for every native source file; the local agent saves open EDA documents, validates the project directory and complete file set, rejects stale source, backs up the originals, writes only changed native files and reads them back.
 - After a write, the local agent waits for the EasyEDA reload and compares PCB component counts and linked schematic component/wire counts with the native source. A mismatch triggers rollback. Previous DRC and fabrication outputs are invalidated.
 - The browser can download the current ERC/DRC result as JSON for review and follow-up.
-- BOM/CPL normalization supports comma and tab-delimited EasyEDA output, exact LCSC C-number validation, footprint and designator checks, mm coordinate normalization, and board-specific assembly-side rules (upper CN7/CN10 bottom, lower CN7/CN10 top). THT items remain gated on live JLCPCB wave-soldering eligibility.
+- BOM/CPL normalization supports comma and tab-delimited EasyEDA output, exact LCSC C-number validation, footprint and designator checks, mm coordinate normalization, and board-specific assembly-side rules (upper CN7/CN10 bottom, lower CN7/CN10 top). The editable-record export now exposes component designators/unique IDs, and guarded patches can set `PCB:COMPONENT.layerId` to Top (1) or Bottom (2). THT items remain gated on live JLCPCB wave-soldering eligibility.
 - The generic two-resistor integration coupon now passes KiCad 10.0.8 ERC and DRC with zero warnings/errors, zero unconnected items and zero schematic/PCB parity issues. The CI run also deploys the static GitHub Pages preview.
 - This is not a validation result for the real NUCLEO upper/lower boards. Their fresh ERC/DRC and manufacturing export must be run in the user's EasyEDA Pro session.
 - Export remains REVIEW_ONLY. EasyEDA manufacture-data APIs are beta preview. JLCPCB upload preview, live stock, PCBA eligibility, THT, orientation, electrical and physical review are required.
@@ -22,7 +22,8 @@
 4. Test a harmless text/position patch on a copy; verify SHA preflight, live project update, reload object counts, backup and rollback path.
 5. Test a controlled routing/footprint change on a copy; confirm the native EDA document reloads and the netlist remains correct.
 6. Generate Gerber/BOM/CPL from the same source revision. Independently inspect all copper, mask, paste, outline and drill files.
-7. Resolve CN7/CN10 underside THT placement and verify exact LCSC parts, MPNs, footprints, rotation, stock and JLCPCB PCBA support.
+7. Apply the upper-board CN7/CN10 bottom-side patch after confirming the selected EasyEDA project. Verify the exported CPL side and bottom-side rotation in JLCPCB preview; do not guess a mirrored angle.
+8. Verify exact LCSC parts, MPNs, footprints, rotation, stock and JLCPCB PCBA support.
 8. Correct the upper CN7/CN10 CPL side and validate bottom-side rotation against the JLCPCB upload preview.
 9. Upload the draft files to JLCPCB's preview and compare their parsed layers, BOM and placement data. Only after a human review can the files be called order-ready.
 10. The hosted static preview is deployed. The local Bridge interface remains loopback-only.
