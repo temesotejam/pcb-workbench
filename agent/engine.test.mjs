@@ -88,3 +88,13 @@ test("JLCPCB assembly side policy blocks a connector placed on the wrong board s
  assert.equal(right.blockers.length,0)
  assert.equal(right.cplNormalized[0].Layer,"Bottom")
 })
+
+test("JLCPCB export rejects empty BOM/CPL and invalid grouped quantities",()=>{
+ const empty=checkBomCpl("Quantity,Designator,Comment,Footprint,LCSC Part #\\r\\n","Designator,Mid X,Mid Y,Rotation,Layer\\r\\n")
+ assert.ok(empty.blockers.includes("BOM is empty"))
+ assert.ok(empty.blockers.includes("CPL is empty"))
+ const bom='Quantity,Designator,Comment,Footprint,LCSC Part #\\r\\n1,R1,R,0603,C17414\\r\\n'
+ const cpl='Designator,Mid X,Mid Y,Rotation,Layer\\r\\nR1,1,2,90,Top\\r\\n'
+ assert.ok(checkBomCpl(bom.replace('1,R1','2,R1'),cpl).blockers.some(x=>x.includes('quantity mismatch')))
+ assert.ok(checkBomCpl(bom.replace('1,R1','0,R1'),cpl).blockers.some(x=>x.includes('quantity mismatch')))
+})
