@@ -62,7 +62,7 @@ function nativePanel(p){
  inspectButton.onclick=async()=>{try{download(JSON.stringify(await inspectSource(nativeSource(entries,board)),null,2),board.key+'-editable-records.json')}catch(e){status.textContent=e.message}}
  const lbl=add(p,'p','AI差分JSONを選択'),file=add(lbl,'input');file.type='file';file.accept='.json,application/json'
  const status=add(p,'p','原本は未変更です。')
- file.onchange=async()=>{try{const f=file.files?.[0];if(!f)return;if(f.size>5*1024*1024)throw new Error('Patch too large');const patchText=await f.text();const result=await applyPatchText(patchText);status.textContent=result.liveApplied?'EasyEDA Proの作業中プロジェクトへ反映しました。必ず再度ERC / DRCを実行してください。':'差分をブラウザ内に適用し、編集用ZIPを出力しました。EasyEDAへの反映には接続・アタッチが必要です。'}catch(e){status.textContent='差分適用中止: '+e.message}}
+ file.onchange=async()=>{try{const f=file.files?.[0];if(!f)return;if(f.size>5*1024*1024)throw new Error('Patch too large');const patchText=await f.text();const result=await applyPatchText(patchText);const rv=result.updateResult?.runtimeVerification;status.textContent=result.liveApplied?(rv?.passed?'EasyEDA Proへの反映とPCB・回路図の再読込確認が完了しました。ERC / DRCを再実行してください。':'ファイル書込みは完了しましたが、EDA側の再読込確認は未完了です。発注データは使わず、詳細を確認してください。'):'差分をブラウザ内に適用し、編集用ZIPを出力しました。EasyEDAへの反映には接続・アタッチが必要です。'}catch(e){status.textContent='差分適用中止: '+e.message}}
  add(p,'h2','変更前の製造資料')
  add(p,'p','既存Gerberと形式整理済みBOM/CPLを照合用として出力します。上下実装、在庫、ERC等は未承認。発注用として使用しないでください。')
  const b=add(p,'button','製造確認用ZIP（発注不可）')

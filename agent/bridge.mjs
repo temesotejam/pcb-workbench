@@ -226,7 +226,7 @@ export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPat
    "const args="+JSON.stringify(args)+";",
    "const boards=await eda.dmt_Board.getAllBoardsInfo();const b=boards.find(x=>x.name===args.boardName);",
    "if(!b||b.pcb?.uuid!==args.pcbUuid)throw new Error('The active PCB identity does not match the patched native source.');",
-   "const pcbTab=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(!pcbTab)throw new Error('Could not reopen patched PCB.');",
+   "await new Promise(r=>setTimeout(r,8000));const pcbTab=await eda.dmt_EditorControl.openDocument(b.pcb.uuid);if(!pcbTab)throw new Error('Could not reopen patched PCB.');",
    "await new Promise(r=>setTimeout(r,1500));const pcbComponents=await eda.pcb_PrimitiveComponent.getAll();",
    "if(pcbComponents.length!==args.expectedPcbComponents)throw new Error('PCB reload component count mismatch: expected '+args.expectedPcbComponents+', got '+pcbComponents.length);",
    "const pages=await eda.dmt_Schematic.getAllSchematicPagesInfo();const linked=pages.filter(p=>p.parentSchematicUuid===b.schematic?.uuid);const pageChecks=[];",

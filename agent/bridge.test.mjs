@@ -126,3 +126,18 @@ test("Live EDA reload verification failure rolls native files back",async()=>{
   assert.equal((await readFile(path.join(dir,"pcb/Board.epcb2"))).toString(),"old")
  }finally{await rm(root,{recursive:true,force:true})}
 })
+
+test("Successful live patch returns explicit runtime reload evidence",async()=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),"pwb-runtime-")),dir=path.join(root,"Demo")
+ try{
+  await mkdir(path.join(dir,"pcb"),{recursive:true});await mkdir(path.join(dir,"sch"),{recursive:true})
+  const source={"Demo.eprj3":enc('{"profile":{}}'),"pcb/Board.epcb2":enc("old"),"sch/Page.esch2":enc("old")}
+  for(const [name,data] of Object.entries(source)){const target=path.join(dir,name);await mkdir(path.dirname(target),{recursive:true});await writeFile(target,data)}
+  const hashes=Object.fromEntries(Object.entries(source).map(([name,data])=>[name,sha(data)]))
+  const result=await applyNativePatchFiles(dir,[root],zipSync({...source,"pcb/Board.epcb2":enc("new")}),hashes,async()=>null,async()=>({passed:true,pcb:{expectedComponents:2,actualComponents:2}}))
+  assert.equal(result.readBackVerified,true)
+  assert.equal(result.runtimeVerification.passed,true)
+  assert.deepEqual(result.updatedFiles,["pcb/Board.epcb2"])
+  await rm(result.backupDir,{recursive:true,force:true})
+ }finally{await rm(root,{recursive:true,force:true})}
+})
