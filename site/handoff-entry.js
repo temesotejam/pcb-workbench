@@ -223,6 +223,58 @@ function nativePanel(p){
   }catch(e){status.textContent='配線編集を中止しました: '+e.message}
   finally{routeApply.disabled=false}
  }
+ const viaEditor=add(p,'section','')
+ add(viaEditor,'h3','既存ビアの位置・寸法編集')
+ add(viaEditor,'p','既存PCB:VIAレコードの中心座標・外径・穴径を変更します。層構成やネット接続を新規作成する機能ではありません。製造前に必ずDRCとドリルデータを確認してください。')
+ const viaRow=add(viaEditor,'p',''),viaSelect=add(viaRow,'select',''),viaRefresh=add(viaRow,'button','ビア一覧を読み込む')
+ const viaFields=add(viaEditor,'div',''),viaInputs={}
+ for(const [key,label,step] of [['centerX','Center X (mil)','1'],['centerY','Center Y (mil)','1'],['viaDiameter','Via diameter (mil)','0.1'],['holeDiameter','Hole diameter (mil)','0.1']]){
+  const l=add(viaFields,'label',label+' '),input=add(l,'input');input.type='number';input.step=step;viaInputs[key]=input
+ }
+ const viaApply=add(viaEditor,'button','ビアの変更を適用')
+ let viaRecords=[]
+ const loadViaRecords=async()=>{
+  viaRefresh.disabled=true
+  try{
+   const inspection=await inspectSource(nativeSource(entries,board))
+   viaRecords=inspection.documents.filter(x=>x.docType==='PCB'&&x.recordType==='VIA'&&['centerX','centerY','viaDiameter','holeDiameter'].every(k=>Number.isFinite(x.fields[k]))&&x.fields.viaDiameter>x.fields.holeDiameter&&x.fields.holeDiameter>0)
+   const counts=new Map()
+   for(const item of viaRecords)counts.set(item.recordId,(counts.get(item.recordId)||0)+1)
+   viaRecords=viaRecords.filter(item=>counts.get(item.recordId)===1)
+   viaSelect.replaceChildren()
+   for(const item of viaRecords){const o=add(viaSelect,'option',(item.net||'No net')+' · '+item.recordId+' · ('+item.fields.centerX+','+item.fields.centerY+')');o.value=item.recordId+'|'+item.path}
+   if(!viaRecords.length)throw new Error('編集可能なビアレコードがありません')
+   for(const key of Object.keys(viaInputs))viaInputs[key].value=viaRecords[0].fields[key]
+   status.textContent=viaRecords.length+'個の既存ビアを編集対象として読み込みました。'
+  }catch(e){status.textContent='ビア一覧の読み込み失敗: '+e.message}
+  finally{viaRefresh.disabled=false}
+ }
+ viaSelect.onchange=()=>{
+  const item=viaRecords.find(x=>x.recordId+'|'+x.path===viaSelect.value)
+  if(!item)return
+  for(const key of Object.keys(viaInputs))viaInputs[key].value=item.fields[key]
+ }
+ viaRefresh.onclick=loadViaRecords
+ viaApply.onclick=async()=>{
+  viaApply.disabled=true
+  try{
+   const item=viaRecords.find(x=>x.recordId+'|'+x.path===viaSelect.value)
+   if(!item)throw new Error('編集するビアを選択してください')
+   const values=Object.fromEntries(Object.entries(viaInputs).map(([key,input])=>[key,Number(input.value)]))
+   if(!Object.values(values).every(Number.isFinite))throw new Error('ビア寸法と座標には有限の数値を入力してください')
+   if(values.viaDiameter<=values.holeDiameter||values.holeDiameter<=0||values.viaDiameter>500||values.holeDiameter>500)throw new Error('ビア外径は穴径より大きく、両方500 mil以下にしてください')
+   const set={},expect={}
+   for(const key of Object.keys(values))if(values[key]!==item.fields[key]){set[key]=values[key];expect[key]=item.fields[key]}
+   if(!Object.keys(set).length){status.textContent='変更はありません。';return}
+   if(!confirm('既存ビア '+item.recordId+' ('+(item.net||'No net')+') を変更します。\\nビア径・穴径・位置の変更によりDRCや製造条件が変わります。続行しますか？'))return
+   const patch={schema:'pcb-workbench-native-patch/v1',changes:[{path:item.path,baseSha256:item.baseSha256,docType:item.docType,docUuid:item.docUuid,recordType:item.recordType,recordId:item.recordId,expect,set}]}
+   const result=await applyPatchText(JSON.stringify(patch))
+   const rv=result.updateResult?.runtimeVerification
+   status.textContent=result.liveApplied?(rv?.passed?'ビア変更をEasyEDAへ反映し、再読込を確認しました。DRCとドリル出力を確認してください。':'書込み後の再読込確認が未完了です。製造データには使用しないでください。'):'ビア変更済みZIPを出力しました。EasyEDAで読み込み、DRCとドリル出力を確認してください。'
+   viaRecords=[]
+  }catch(e){status.textContent='ビア編集を中止しました: '+e.message}
+  finally{viaApply.disabled=false}
+ }
  if(board.nativeBoardName==="NUCLEO-F401RE Rev1.5"){
   const underside=add(p,'button','CN7 / CN10 を裏面へ移動（確認付き）')
   underside.onclick=async()=>{
