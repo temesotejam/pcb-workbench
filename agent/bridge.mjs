@@ -34,8 +34,8 @@ export async function bridgeWindows(port){
 export async function selectBridgeWindow(port,windowId){
  return await request(port,"/eda-windows/select",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({windowId})})
 }
-export async function bridgeExecute(port,windowId,code){
- const data=await request(port,"/execute",{method:"POST",timeout:30000,headers:{"Content-Type":"application/json"},body:JSON.stringify({code,windowId})})
+export async function bridgeExecute(port,windowId,code,timeout=120000){
+ const data=await request(port,"/execute",{method:"POST",timeout,headers:{"Content-Type":"application/json"},body:JSON.stringify({code,windowId})})
  let result=parseBridgeEnvelope(data)
  if(typeof result==="string"){try{result=JSON.parse(result)}catch{}}
  return result
@@ -51,6 +51,11 @@ export async function inspectCurrentProject(port,windowId){
  const result=await bridgeExecute(port,windowId,code)
  if(!result?.boards?.length)throw new Error("No PCB board is open in the connected EasyEDA Pro window")
  if(result.isClient!==true)throw new Error("Connected EDA window is not the EasyEDA Pro desktop client")
+ if(!Array.isArray(result.projectPaths)||!result.projectPaths.length){
+  for(const configPath of [path.join(os.homedir(),"Documents","EasyEDA-Pro","config.json"),path.join(os.homedir(),"Documents","LCEDA-Pro","config.json")]){
+   try{const config=JSON.parse(await readFile(configPath,"utf8"));if(Array.isArray(config.APP_PROJECT_DIR)){result.projectPaths=config.APP_PROJECT_DIR;break}}catch{}
+  }
+ }
  result.projectDir=null
  if(result.project?.name&&Array.isArray(result.projectPaths)){
   for(const root of result.projectPaths){
@@ -73,7 +78,7 @@ export async function bridgeVerifyBoard(port,windowId,boardName){
  "for(const page of target){const tab=await eda.dmt_EditorControl.openDocument(page.uuid);if(!tab){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:'Could not open page'});continue;}await eda.sch_Document.save();await new Promise(r=>setTimeout(r,8000));let verbose=null,verboseError=null;try{verbose=await eda.sch_Drc.check(true,false,true);}catch(e){verboseError=String(e);}try{const passed=await eda.sch_Drc.check(true,false,false);schematic.push({name:page.name,uuid:page.uuid,passed:passed===true,verbose,verboseError});}catch(e){schematic.push({name:page.name,uuid:page.uuid,passed:false,error:String(e),verbose,verboseError});}}",
  "return {board:{name:b.name,uuid:b.uuid,pcbUuid:b.pcb.uuid,schematicUuid:b.schematic?.uuid??null},pcb:{passed:pcbPassed===true,booleanResult:pcbPassed,verbose,verboseError},schematics:schematic,schematicPassed:target.length>0&&schematic.length===target.length&&schematic.every(x=>x.passed),checkedAt:new Date().toISOString(),engineVersion:eda.sys_Environment.getEditorCurrentVersion()};"
  ].join("\n")
- return await bridgeExecute(port,windowId,code)
+ return await bridgeExecute(port,windowId,code,120000)
 }
 async function exportFiles(port,windowId,boardName){
  const code=[
@@ -89,7 +94,7 @@ async function exportFiles(port,windowId,boardName){
  "let step=null,stepError=null;try{step=await eda.pcb_ManufactureData.get3DFile('PCB_Workbench_Board','step',['Component Model'],'Outfit',true);}catch(e){stepError=String(e);}",
  "return {boardName:b.name,engineVersion:eda.sys_Environment.getEditorCurrentVersion(),files:{gerber:await toB64(gerber),bom:await toB64(bom),cpl:await toB64(cpl),step:step?await toB64(step):null,netlist:netlist?await toB64(netlist):null},optionalErrors:{step:stepError,netlist:netlistError}};"
  ].join("\n")
- return await bridgeExecute(port,windowId,code)
+ return await bridgeExecute(port,windowId,code,120000)
 }
 export async function bridgeExportBoard(port,windowId,boardName){
  const verification=await bridgeVerifyBoard(port,windowId,boardName)
@@ -140,7 +145,7 @@ export async function bridgeApplyNativePatch(port,windowId,projectDir,projectPat
   "for(const p of pages){const t=await eda.dmt_EditorControl.openDocument(p.uuid);if(t)await eda.sch_Document.save();}",
   "await new Promise(r=>setTimeout(r,8000));return {saved:true};"
  ].join("\n")
- await bridgeExecute(port,windowId,saveCode)
+ await bridgeExecute(port,windowId,saveCode,120000)
  const original=new Map(),targets=new Map()
  for(const name of names){
   const target=path.resolve(dir,name)

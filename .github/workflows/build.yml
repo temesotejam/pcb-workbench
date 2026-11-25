@@ -18,7 +18,7 @@ jobs:
       - name: Python unit tests
         run: python3 -m unittest discover -s tests -v
       - name: Check local agent syntax
-        run: node --check agent/server.mjs && node --check agent/engine.mjs
+        run: node --check agent/server.mjs && node --check agent/engine.mjs && node --check agent/bridge.mjs
       - name: Install circuit engine
         run: bun install
       - name: Catalog and local agent tests
