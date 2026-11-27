@@ -5,7 +5,7 @@ import { cp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises"
 import { resolve } from "node:path"
 import { resolveParts, assertSourceParity } from "../library/parts"
 import { jlcpcbFootprintResolver } from "../library/footprints"
-import { projectToCircuitPlan, planMetadata } from "./project-adapter.js"
+import { projectToCircuitPlan, planMetadata, neutralEnginePlan, restoreEngineNetNames } from "./project-adapter.js"
 import { NativeDesign } from "./native-design"
 import catalog from "../library/catalog.json"
 
@@ -249,25 +249,35 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
   try{
     result.parts=resolveParts(meta.parts)
     const circuit=new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})
-    if(plan)circuit.add(<NativeDesign plan={plan}/>)
+    const engine=plan?neutralEnginePlan(plan):null
+    const restore=(text:string)=>engine?restoreEngineNetNames(text,engine.aliases):text
+    if(engine)circuit.add(<NativeDesign plan={engine.plan}/>)
     else {const Design=(await import(resolve(dir,"design.tsx"))).default;circuit.add(<Design />)}
     await circuit.renderUntilSettled()
     const json=circuit.getCircuitJson()
     const namedNets=json.filter((x:any)=>x.type==="source_net").map((x:any)=>x.name)
-    for(const expected of meta.expectedNets??[])if(!namedNets.includes(expected))throw new Error("Named net missing from Circuit JSON: "+expected)
-    await writeFile(resolve(path,"circuit.json"),JSON.stringify(json,null,2));result.files.push("circuit.json")
+    for(const expected of engine?.plan.nets??meta.expectedNets??[])if(!namedNets.includes(expected))throw new Error("Named net missing from Circuit JSON: "+expected)
+    await writeFile(resolve(path,"circuit.json"),restore(JSON.stringify(json,null,2)));result.files.push("circuit.json")
     assertSourceParity(json,result.parts)
-    await writeFile(resolve(path,"schematic.svg"),convertCircuitJsonToSchematicSvg(json))
-    await writeFile(resolve(path,"pcb.svg"),convertCircuitJsonToPcbSvg(json));result.files.push("schematic.svg","pcb.svg")
+    await writeFile(resolve(path,"schematic.svg"),restore(convertCircuitJsonToSchematicSvg(json)))
+    await writeFile(resolve(path,"pcb.svg"),restore(convertCircuitJsonToPcbSvg(json)));result.files.push("schematic.svg","pcb.svg")
     const sch=new CircuitJsonToKicadSchConverter(json);sch.runUntilFinished()
     const schFiles=sch.getOutputFiles({schematicFilename:"board.kicad_sch"}).filter((f:any)=>/^[a-zA-Z0-9_. -]+\.kicad_sch$/.test(f.filename)).map((f:any)=>({filename:f.filename,content:f.content}))
     const pcb=new CircuitJsonToKicadPcbConverter(json);pcb.runUntilFinished()
     const prepared=prepareKicadParity(schFiles,pcb.getOutputString(),namedNets)
-    await writeFile(resolve(path,"schematic-fix-report.json"),JSON.stringify(prepared.schematicFixes,null,2));result.files.push("schematic-fix-report.json")
-    for(const f of prepared.schematicFiles){await writeFile(resolve(path,f.filename),f.content);result.files.push(f.filename)}
-    await writeFile(resolve(path,"board.kicad_pcb"),prepared.pcbText)
+    if(plan){
+      const labels=prepared.schematicFiles.map(f=>restore(f.content)).join("\n")
+      const pcbText=restore(prepared.pcbText)
+      for(const name of plan.nets){
+        if(!labels.includes('(label "'+name+'"'))throw new Error("Missing explicit local KiCad label: "+name)
+        if(!pcbText.includes('"/'+name+'"'))throw new Error("Missing explicit local PCB net: "+name)
+      }
+    }
+    await writeFile(resolve(path,"schematic-fix-report.json"),restore(JSON.stringify(prepared.schematicFixes,null,2)));result.files.push("schematic-fix-report.json")
+    for(const f of prepared.schematicFiles){await writeFile(resolve(path,f.filename),restore(f.content));result.files.push(f.filename)}
+    await writeFile(resolve(path,"board.kicad_pcb"),restore(prepared.pcbText))
     const pro=new CircuitJsonToKicadProConverter(json,{projectName:"board",schematicFilename:"board.kicad_sch",pcbFilename:"board.kicad_pcb"});pro.runUntilFinished()
-    await writeFile(resolve(path,"board.kicad_pro"),pro.getOutputString())
+    await writeFile(resolve(path,"board.kicad_pro"),restore(pro.getOutputString()))
     const prettyByLib=new Map<string,string[]>()
     for(const [key,content] of prepared.footprintLibraryFiles){
       const [lib,item]=key.split("/"),libDir=resolve(path,lib+".pretty")

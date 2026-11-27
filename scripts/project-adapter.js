@@ -18,3 +18,28 @@ export function projectToCircuitPlan(project,catalog){
 export function planMetadata(plan,id){
   return {id,name:plan.name,revision:"schema-v1",purpose:"Independent JSON design; unreviewed preview",release:false,assemblyProfile:"Candidate only",layers:["F.Cu","B.Cu","F.Paste","B.Paste","F.Mask","B.Mask","F.SilkS","B.SilkS","Edge.Cuts"],parts:plan.parts,expectedNets:plan.nets,allowedWarnings:[]};
 }
+
+// Schema v1 names are logical local nets, not implicit power declarations.
+// The renderer may recognize GND/VCC/etc and synthesize power symbols.
+// Use collision-free neutral engine names, then restore exact user names
+// after conversion. Never invent a power source or suppress ERC.
+export function neutralEnginePlan(plan){
+  let prefix="PCBWB_INTERNAL_NET_";
+  while(plan.nets.some(name=>name.startsWith(prefix)))prefix+="_";
+  const aliases=new Map(plan.nets.map((name,i)=>[prefix+(i+1),name]));
+  const byName=new Map([...aliases].map(([alias,name])=>[name,alias]));
+  return {
+    aliases,
+    plan:{...plan,nets:[...aliases.keys()],traces:plan.traces.map(t=>{
+      const alias=byName.get(t.to.slice(4));
+      if(!t.to.startsWith("net.")||!alias)throw new Error("Unknown logical net selector: "+t.to);
+      return {...t,to:"net."+alias};
+    })}
+  };
+}
+export function restoreEngineNetNames(text,aliases){
+  if(!aliases.size)return text;
+  // All aliases consist of ASCII letters, underscores and digits.
+  const pattern=new RegExp("\\b(?:"+[...aliases.keys()].join("|")+")\\b","g");
+  return text.replace(pattern,alias=>aliases.get(alias));
+}
