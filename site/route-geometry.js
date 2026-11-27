@@ -23,23 +23,37 @@ export function routePoints(project,footprints,route){
   return points;
 }
 
-// Each marked waypoint is a through-via; top SMD endpoints always start/end on top.
-export function routeCopper(project,footprints,route){
-  const points=routePoints(project,footprints,route),segments=[],vias=[];
+function checkVia(project,point,v,width){
+  if(!v||!Number.isFinite(v.diameter)||!Number.isFinite(v.drill)||v.drill<.1||v.diameter>5||v.diameter<width||v.diameter-v.drill<.1-1e-9)throw new Error("Invalid through-via");
+  checkPoint(project,point,v.diameter);
+}
+function copperPath(points,width){
+  const segments=[],vias=[];
   let layer="top";
   for(let i=1;i<points.length;i++){
     const a=points[i-1],b=points[i];
-    segments.push({from:{x:a.x,y:a.y},to:{x:b.x,y:b.y},layer,width:route.width});
+    if(!samePoint(a,b))segments.push({from:{x:a.x,y:a.y},to:{x:b.x,y:b.y},layer,width});
     if(b.via!==undefined){
       const v=b.via;
-      if(!v||!Number.isFinite(v.diameter)||!Number.isFinite(v.drill)||v.drill<.1||v.diameter>5||v.diameter<route.width||v.diameter-v.drill<.1-1e-9)throw new Error("Invalid through-via");
-      checkPoint(project,b,v.diameter);
       vias.push({x:b.x,y:b.y,diameter:v.diameter,drill:v.drill});
       layer=layer==="top"?"bottom":"top";
     }
   }
+  return {segments,vias,layer};
+}
+
+// Each marked waypoint is a through-via; top SMD endpoints always start/end on top.
+export function routeCopper(project,footprints,route){
+  const points=routePoints(project,footprints,route);
+  for(const p of points)if(p.via!==undefined)checkVia(project,p,p.via,route.width);
+  const {segments,vias,layer}=copperPath(points,route.width);
   if(layer!=="top")throw new Error("Top SMD endpoints require an even number of layer transitions");
   return {segments,vias};
+}
+
+// A partial draft may end on bottom; the cursor is not a committed via.
+export function routeDraftCopper(draft,cursor){
+  return copperPath([draft.start,...draft.waypoints,...(cursor?[{x:cursor.x,y:cursor.y}]:[])],draft.width);
 }
 
 export function parseWaypoints(value){
@@ -66,9 +80,13 @@ export function snapRoutePoint(svgPoint,step=.25){
   const snap=n=>Math.round(n/step)*step||0;
   return {x:snap(svgPoint.x),y:snap(-svgPoint.y)};
 }
-export function appendRouteWaypoint(project,draft,svgPoint){
+export function appendRouteWaypoint(project,draft,svgPoint,via=undefined){
   const point=snapRoutePoint(svgPoint);
   checkPoint(project,point,draft.width);
+  if(via!==undefined){
+    checkVia(project,point,via,draft.width);
+    point.via={diameter:via.diameter,drill:via.drill};
+  }
   if(samePoint(point,draft.waypoints.at(-1)??draft.start))throw new Error("Repeated route waypoint");
   if(draft.waypoints.length>=100)throw new Error("Too many route waypoints");
   return {...draft,waypoints:[...draft.waypoints,point]};
@@ -78,6 +96,6 @@ export function finishRouteDraft(project,footprints,draft,to){
   if(!net||!net.pins.some(p=>samePin(p,draft.from))||!net.pins.some(p=>samePin(p,to)))throw new Error("Route pads must be on the same logical net");
   if(samePin(draft.from,to))throw new Error("Route needs two different pads");
   const edit={type:"add-route",from:draft.from,to:{ref:to.ref,pin:to.pin},width:draft.width,waypoints:draft.waypoints};
-  routePoints(project,footprints,edit);
+  routeCopper(project,footprints,edit);
   return edit;
 }

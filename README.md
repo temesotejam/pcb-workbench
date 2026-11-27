@@ -14,7 +14,10 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 
 ### Two-layer route draft (development)
 
-- Optional waypoint `via: {diameter, drill}` switches between top and bottom copper. Both endpoints are top SMD pads; an even number of through-vias is mandatory. Numeric entry accepts `x,y` or `x,y,diameter,drill` in mm; routes preserve via dimensions in schema-v1 JSON and display copper by layer plus via rings. No blind/buried vias or bottom components. This is a geometry draft, not a manufacturing rule profile. Via-bearing designs are explicitly refused by the converter until serialized via and drill parity and independent DRC pass. Existing top-layer route workflow is unchanged. Graphical via placement remains pending.
+- PR #10 passed [build](https://github.com/temesotejam/pcb-workbench/actions/runs/46064904770) and [independent KiCad manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46064904674) and merged at f3634d8. The crossed two-layer fixture passed with exactly five serialized copper segments and two through-vias, alongside the other five fixture boards. Draft only; independent Excellon drill-file parity is still outstanding.
+- Graphical via candidate: Shift-click the board or select the one-shot via option, with explicit outer and hole diameters. The temporary route changes color by layer, shows via rings and requires return to top before committing to an SMD pad. Backspace removes the last temporary waypoint. Browser interaction and CI remain to be verified.
+
+- Optional waypoint `via: {diameter, drill}` switches between top and bottom copper. Both endpoints are top SMD pads; an even number of through-vias is mandatory. Numeric entry accepts `x,y` or `x,y,diameter,drill` in mm; routes preserve via dimensions in schema-v1 JSON and display copper by layer plus via rings. No blind/buried vias or bottom components. This is a geometry draft, not a manufacturing rule profile. The explicitly enabled build converter supports via-bearing complete manual designs, with serialized segment/via parity and independent KiCad DRC. Excellon drill-file parity remains outstanding. Existing top-layer route workflow is unchanged.
 
 ### Manual two-layer routing candidate (development)
 

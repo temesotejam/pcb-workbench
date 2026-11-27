@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {applyEdit,validateProject,inspectProject} from "../site/project-model.js";
 import {projectToCircuitPlan} from "../scripts/project-adapter.js";
-import {routePoints,routeCopper,parseWaypoints,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint} from "../site/route-geometry.js";
+import {routePoints,routeCopper,parseWaypoints,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint,routeDraftCopper} from "../site/route-geometry.js";
 const read=p=>JSON.parse(readFileSync(new URL(p,import.meta.url),"utf8"));
 const catalog=read("../library/catalog.json");
 const fixture=()=>read("../projects/native-resistors/native.json");
@@ -200,4 +200,35 @@ test("two-layer compilation and serialized parity preserve every segment and thr
     assert.ok(vias[0].includes(a));assert.throws(()=>verify(blocks,[vias[0].replace(a,b),vias[1]]));
   }
   assert.throws(()=>verify(blocks.map(b=>b.replace('"B.Cu"','"F.Cu"'))),/segment parity/);
+});
+
+test("graphical two-layer draft previews current layer and commits exact via dimensions atomically",()=>{
+  const p=fixture(),f=syntheticGeometry(p),n=p.nets[0],before=JSON.stringify(p);
+  const a=beginRouteDraft(p,f,n.pins[0],.25);
+  const v={diameter:.8,drill:.4};
+  const b=appendRouteWaypoint(p,a,{x:.13,y:-2.12},v);
+  v.diameter=4;
+  assert.deepEqual(b.waypoints,[{x:.25,y:2,via:{diameter:.8,drill:.4}}]);
+  assert.equal(routeDraftCopper(b).layer,"bottom");
+  assert.deepEqual(routeDraftCopper(b,{x:2,y:0}).segments.map(s=>s.layer),["top","bottom"]);
+  assert.throws(()=>finishRouteDraft(p,f,b,n.pins[1]),/even number/);
+  const c=appendRouteWaypoint(p,b,{x:2,y:0});
+  const d=appendRouteWaypoint(p,c,{x:.13,y:2.12},{diameter:.9,drill:.35});
+  assert.equal(routeDraftCopper(d).layer,"top");
+  const q=edit(p,finishRouteDraft(p,f,d,n.pins[1]));
+  const copper=routeCopper(q,f,q.routes[0]);
+  assert.deepEqual(copper.segments.map(s=>s.layer),["top","bottom","bottom","top"]);
+  assert.deepEqual(copper.vias,[{x:.25,y:2,diameter:.8,drill:.4},{x:.25,y:-2,diameter:.9,drill:.35}]);
+  assert.deepEqual(a.waypoints,[]);
+  assert.equal(JSON.stringify(p),before);
+});
+test("graphical via rejects bad ring or hole, board-edge annulus and duplicate points",()=>{
+  const p=fixture(),f=syntheticGeometry(p),a=beginRouteDraft(p,f,p.nets[0].pins[0],.25);
+  for(const v of [{diameter:.3,drill:.3},{diameter:.7,drill:0},{diameter:NaN,drill:.3},null])assert.throws(()=>appendRouteWaypoint(p,a,{x:0,y:-2},v),/via/);
+  assert.throws(()=>appendRouteWaypoint(p,a,{x:p.board.width/2-.25,y:0},{diameter:.8,drill:.4}),/outside board/);
+  const b=appendRouteWaypoint(p,a,{x:0,y:-2},{diameter:.8,drill:.4});
+  assert.throws(()=>appendRouteWaypoint(p,b,{x:0,y:-2},{diameter:.8,drill:.4}),/Repeated/);
+  assert.equal(routeDraftCopper(b,{x:0,y:2}).segments.length,1);
+  assert.equal(routeDraftCopper({...b,waypoints:b.waypoints.slice(0,-1)}).layer,"top");
+  assert.deepEqual(a.waypoints,[]);
 });
