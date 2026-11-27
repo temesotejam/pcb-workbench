@@ -43,7 +43,7 @@ def cases(board):
         end = board.rfind(")")
         return board[:end] + "\n" + extra + "\n" + board[end:]
     return [
-        ("short",insert(stub(s,a,b)),"shorting_items"),
+        ("crossing-short",insert(stub(s,a,b)),"tracks_crossing"),
         ("clearance",insert(stub(s,a,near)),"clearance"),
         ("unconnected",board.replace(s,"",1),"unconnected_items")
     ]

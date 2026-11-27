@@ -65,4 +65,6 @@ jobs:
           path: |
             dist/projects/*/draft/
             dist/projects/*/validation.json
+            dist/projects/*/erc.json
+            dist/projects/*/drc.json
           if-no-files-found: warn
