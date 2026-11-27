@@ -1,4 +1,5 @@
 import {createProject,validateProject,applyEdit,inspectProject} from "./project-model.js";
+import {attachGraphicEditor} from "./editor-graphics.js";
 const $=id=>document.getElementById(id);
 const key="pcb-workbench.native-project.v1";
 let catalog,project;
@@ -14,6 +15,8 @@ function setProject(next,message){
   render();
 }
 function action(edit){try{setProject(applyEdit(project,edit,catalog),"変更を反映しました")}catch(e){status(e.message)}}
+const renderSchematic=attachGraphicEditor($("schematic-view"),"schematic",action);
+const renderPcb=attachGraphicEditor($("pcb-view"),"pcb",action);
 function table(parent,headers){parent.replaceChildren();const t=el("table",null,parent),h=el("tr",null,el("thead",null,t));for(const title of headers)el("th",title,h);return el("tbody",null,t)}
 function placement(parent,c,view){
   const f=el("form",null,parent),inputs=[];
@@ -39,6 +42,7 @@ function render(){
   }
   const nets=table($("nets"),["ネット","接続ピン","操作"]);
   for(const n of project.nets){const row=el("tr",null,nets);el("td",n.name,row);el("td",n.pins.map(p=>p.ref+":"+p.pin).join(", ")||"未接続",row);button(el("td",null,row),"削除",()=>action({type:"remove-net",name:n.name}))}
+  renderSchematic(project,catalog);renderPcb(project,catalog);
   const report=inspectProject(project,catalog);$("diagnostics").textContent=report.issues.length?report.issues.join("\n"):"論理検査の指摘なし（製造可否は未確認）";
 }
 try{
