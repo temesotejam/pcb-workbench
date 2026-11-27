@@ -2,6 +2,8 @@
 
 ## Independent browser CAD (priority from 2026-11-27)
 
+- 2026-11-27: graphical placement PR #2 passed CI and merged at 751d8de. Pin connection candidate: schematic pin click/keyboard selection creates or extends a logical net atomically; distinct existing nets are never silently merged. Pin-specific schematic ratlines follow placement and rotation. PCB ratlines are still center-based; exact imported pad geometry and physical routing remain next. CI and real-browser interaction must be checked; no production approval.
+
 - Added schema v1 project model and browser editor: blank project, board dimensions, registered passive creation/deletion, schematic and PCB center coordinates, logical nets and pin assignment, JSON import/export and local browser persistence. This is not a physical editor or a manufacturing release.
 - Generic RC and resistor-pair model tests cover referential integrity, deletion, reassignment, roundtrip and review-only state. CI runs these tests.
 - JSON conversion candidate: validated schema-v1 models now map to tscircuit board/parts/positions/named pin traces; KiCad generation shares the existing pipeline, with expected net names supplied by each design rather than hard-coded. Two native fixtures exercise resistor and RC designs. CLI private output is separate from Pages. CI results for this change must be checked before claiming end-to-end success.

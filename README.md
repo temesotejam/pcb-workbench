@@ -12,6 +12,10 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
+### Graphical pin connection (development)
+
+- Schematic pins can be selected in pairs to create or extend logical nets. Distinct existing nets require explicit editing; no silent merging. Dashed lines depict logical connections, not physical PCB traces. Real pad geometry remains unimplemented.
+
 ### Independent browser design (early model editor)
 
 - [New project editor](https://temesotejam.github.io/pcb-workbench/editor.html): create a blank project, add registered resistor/capacitor parts, assign logical nets and pins, edit schematic/PCB center coordinates, and save or load schema-v1 JSON. Browser local storage is a convenience; download JSON backups.
