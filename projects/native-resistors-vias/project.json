@@ -1,0 +1,16 @@
+{
+  "id": "native-resistors-vias",
+  "layers": [
+    "F.Cu",
+    "B.Cu",
+    "F.Paste",
+    "B.Paste",
+    "F.Mask",
+    "B.Mask",
+    "F.SilkS",
+    "B.SilkS",
+    "Edge.Cuts"
+  ],
+  "name": "Independent resistor pair — crossed two-layer routing",
+  "purpose": "Two-layer crossing and via integration fixture; not order-ready"
+}

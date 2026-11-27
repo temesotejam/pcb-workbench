@@ -133,7 +133,7 @@ test("serialized KiCad parity rejects changed waypoint, width, net, layer or ext
     return '(segment (start '+(100+a.x)+' '+(100-a.y)+') (end '+(100+b.x)+' '+(100-b.y)+') (width '+a.width+') (layer "F.Cu") (net '+(i+1)+'))';
   }));
   const verify=b=>verifyKicadManualSegments(header,b,out,p);
-  assert.deepEqual(verify(blocks),{routes:2,segments:4,coordinateResolutionMm:.00001,physicalDrcVerified:false,orderReady:false});
+  assert.deepEqual(verify(blocks),{routes:2,segments:4,vias:0,coordinateResolutionMm:.00001,physicalDrcVerified:false,orderReady:false});
   assert.equal(verify(blocks.map(b=>b.replace('"F.Cu"','F.Cu'))).segments,4);
   for(const changed of [
     blocks[0].replace("(end 100 96)","(end 100 95.5)"),
@@ -154,7 +154,8 @@ test("two-layer draft preserves via dimensions and alternates layers without los
   const copper=routeCopper(q,syntheticGeometry(p),q.routes[0]);
   assert.deepEqual(copper.segments.map(s=>s.layer),["top","bottom","bottom","top"]);
   assert.deepEqual(copper.vias,[{x:0,y:-2,...via},{x:0,y:2,...via}]);
-  assert.throws(()=>projectToCircuitPlan(q,catalog,{allowManual:true}),/refusing to omit vias/);
+  assert.throws(()=>projectToCircuitPlan(q,catalog),/refusing to substitute autorouting/);
+  assert.deepEqual(projectToCircuitPlan(q,catalog,{allowManual:true}).manualProject,q);
   assert.equal(inspectProject(q,catalog).orderReady,false);
   assert.deepEqual(routeCopper(p,syntheticGeometry(p),d).segments.map(s=>s.layer),["top","top"]);
 });
@@ -169,4 +170,33 @@ test("via draft rejects odd transitions, invalid holes/rings, board edge and mal
   assert.throws(()=>parseWaypoints("0,1,.7,"),/Waypoint format/);
   const q=edit(p,{...d,waypoints:pts});
   assert.throws(()=>edit(q,{type:"board",width:.5,height:p.board.height}),/Board dimensions/);
+});
+
+test("two-layer compilation and serialized parity preserve every segment and through-via",()=>{
+  const {p,f,json,aliases}=manualCase();
+  p.routes[0].waypoints=[{x:-2,y:-2,via:{diameter:.8,drill:.4}},{x:3,y:0},{x:-2,y:2,via:{diameter:.9,drill:.35}}];
+  const out=injectManualRoutes(json,p,f,aliases);
+  const traces=out.filter(e=>e.type==="pcb_trace"),route=traces[0].route;
+  assert.deepEqual(route.filter(q=>q.route_type==="via").map(q=>[q.from_layer,q.to_layer,q.outer_diameter,q.hole_diameter]),[["top","bottom",.8,.4],["bottom","top",.9,.35]]);
+  assert.deepEqual(route.filter(q=>q.route_type==="wire").map(q=>q.layer),["top","top","bottom","bottom","bottom","top","top"]);
+  const header=p.nets.map((n,i)=>'(net '+(i+1)+' "/'+n.name+'")').join("\n");
+  const blocks=[],vias=[];
+  for(const [i,t] of traces.entries()){
+    const wires=t.route.filter(q=>q.route_type==="wire");
+    for(let j=1;j<wires.length;j++){
+      const a=wires[j-1],b=wires[j];
+      if(a.x===b.x&&a.y===b.y)continue;
+      blocks.push('(segment (start '+(100+a.x)+' '+(100-a.y)+') (end '+(100+b.x)+' '+(100-b.y)+') (width '+a.width+') (layer "'+(a.layer==="top"?"F.Cu":"B.Cu")+'") (net '+(i+1)+'))');
+    }
+    for(const v of t.route.filter(q=>q.route_type==="via"))vias.push('(via (at '+(100+v.x)+' '+(100-v.y)+') (size '+v.outer_diameter+') (drill '+v.hole_diameter+') (layers "F.Cu" "B.Cu") (net '+(i+1)+'))');
+  }
+  const verify=(b=blocks,v=vias)=>verifyKicadManualSegments(header,b,out,p,v);
+  assert.equal(verify().vias,2);
+  assert.equal(verify().segments,6);
+  assert.throws(()=>verify(blocks,[]),/via parity/);
+  assert.throws(()=>verify(blocks,[...vias,vias[0]]),/via parity/);
+  for(const [a,b] of [["(at 98 102)","(at 99 102)"],["(size 0.8)","(size 0.9)"],["(drill 0.4)","(drill 0.3)"],["(net 1)","(net 2)"],['"B.Cu"','"In1.Cu"']]){
+    assert.ok(vias[0].includes(a));assert.throws(()=>verify(blocks,[vias[0].replace(a,b),vias[1]]));
+  }
+  assert.throws(()=>verify(blocks.map(b=>b.replace('"B.Cu"','"F.Cu"'))),/segment parity/);
 });

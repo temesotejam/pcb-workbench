@@ -288,8 +288,8 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
       const labels=prepared.schematicFiles.map(f=>restore(f.content)).join("\n")
       const pcbText=restore(prepared.pcbText)
       if(plan.manualProject){
-        if(sexprBlocks(pcbText,"(via ").length||sexprBlocks(pcbText,"(zone ").length)throw new Error("Unexpected KiCad vias or zones in manual top-layer mode")
-        const audit=verifyKicadManualSegments(pcbText,sexprBlocks(pcbText,"(segment").map(b=>b.text),json,plan.manualProject)
+        if(sexprBlocks(pcbText,"(zone ").length||sexprBlocks(pcbText,"(arc ").length)throw new Error("Unexpected KiCad zones or arc tracks in manual mode")
+        const audit=verifyKicadManualSegments(pcbText,sexprBlocks(pcbText,"(segment").map(b=>b.text),json,plan.manualProject,sexprBlocks(pcbText,"(via ").map(b=>b.text))
         console.log(id,"serialized manual route parity",JSON.stringify(audit))
         await writeFile(resolve(path,"manual-route-parity.json"),JSON.stringify(audit,null,2));result.files.push("manual-route-parity.json")
       }
