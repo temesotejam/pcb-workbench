@@ -63,6 +63,21 @@ function applyEdit(project,edit,catalog){
     }
     case "add-net":p.nets.push({name:edit.name,pins:[]});break;
     case "remove-net":net();p.nets=p.nets.filter(n=>n.name!==edit.name);break;
+    case "connect-pins":{
+      const endpoints=[edit.from,edit.to];
+      for(const pin of endpoints)check(isObject(pin)&&p.components.some(c=>c.ref===pin.ref)&&["1","2"].includes(pin.pin),"Unknown component pin");
+      const same=(a,b)=>a.ref===b.ref&&a.pin===b.pin;
+      check(!same(...endpoints),"Choose two different pins");
+      const [a,b]=endpoints.map(pin=>p.nets.find(n=>n.pins.some(x=>same(x,pin))));
+      check(!a||!b||a===b,"Pins belong to different nets; merge explicitly in the net editor");
+      let target=a||b;
+      if(!target){
+        let i=1;while(p.nets.some(n=>n.name==="Net_"+i))i++;
+        target={name:"Net_"+i,pins:[]};p.nets.push(target);
+      }
+      for(const pin of endpoints)if(!target.pins.some(x=>same(x,pin)))target.pins.push({ref:pin.ref,pin:pin.pin});
+      break;
+    }
     case "assign-pin":{
       component();check(["1","2"].includes(edit.pin),"Unknown pin");
       const target=edit.name===null?null:net();

@@ -22,4 +22,21 @@ function logicalLinks(project){
   }
   return links;
 }
-export {modelToSvg,moveFromDrag,fitView,logicalLinks};
+// Schematic symbol anchors only; never use as physical PCB pad coordinates.
+function schematicPinPoint(position,pin){
+  if(!["1","2"].includes(pin))throw new Error("Unknown schematic pin");
+  const dx=pin==="1"?-3:3;
+  const offsets={0:[dx,0],90:[0,dx],180:[-dx,0],270:[0,-dx]};
+  const offset=offsets[position.rotation];
+  if(!offset)throw new Error("Invalid schematic rotation");
+  return modelToSvg({x:position.x+offset[0],y:position.y+offset[1]});
+}
+function schematicLinks(project){
+  const refs=new Set(project.components.map(c=>c.ref)),links=[];
+  for(const net of project.nets){
+    const pins=net.pins.filter(p=>refs.has(p.ref));
+    for(let i=1;i<pins.length;i++)links.push({name:net.name,from:pins[0],to:pins[i]});
+  }
+  return links;
+}
+export {modelToSvg,moveFromDrag,fitView,logicalLinks,schematicPinPoint,schematicLinks};

@@ -15,7 +15,7 @@ function setProject(next,message){
   render();
 }
 function action(edit){try{setProject(applyEdit(project,edit,catalog),"変更を反映しました")}catch(e){status(e.message)}}
-const renderSchematic=attachGraphicEditor($("schematic-view"),"schematic",action);
+const renderSchematic=attachGraphicEditor($("schematic-view"),"schematic",action,status);
 const renderPcb=attachGraphicEditor($("pcb-view"),"pcb",action);
 function table(parent,headers){parent.replaceChildren();const t=el("table",null,parent),h=el("tr",null,el("thead",null,t));for(const title of headers)el("th",title,h);return el("tbody",null,t)}
 function placement(parent,c,view){

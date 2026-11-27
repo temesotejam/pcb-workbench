@@ -1,4 +1,4 @@
-import {modelToSvg,moveFromDrag,fitView,logicalLinks} from "./editor-geometry.js";
+import {modelToSvg,moveFromDrag,fitView,logicalLinks,schematicPinPoint,schematicLinks} from "./editor-geometry.js";
 const NS="http://www.w3.org/2000/svg";
 function node(tag,attrs,parent,content){
   const e=document.createElementNS(NS,tag);
@@ -23,7 +23,8 @@ function drawComponent(parent,c,p,view,netNames){
     else node("path",{d:"M -1.5 0 H -.35 M .35 0 H 1.5 M -.35 -1.1 V 1.1 M .35 -1.1 V 1.1",stroke:"currentColor","stroke-width":.2,fill:"none"},body);
     // Logical pin labels, not a physical wire representation.
     for(const [i,x] of [[1,-3],[2,3]]){
-      node("circle",{cx:x,cy:0,r:.23,fill:"#61d1b3"},body);
+      const hit=node("circle",{cx:x,cy:0,r:.6,fill:"#61d1b3",stroke:"#16332e","stroke-width":.12,"data-pin":String(i),tabindex:0,role:"button","aria-label":c.ref+" pin "+i+" "+netNames[i-1]},body);
+      node("title",{},hit,c.ref+":"+i+" / "+netNames[i-1]);
       const pin=label(body,x,-.65,String(i),.95);
       pin.setAttribute("transform","rotate("+pos.rotation+" "+x+" -.65)");
     }
@@ -39,13 +40,31 @@ function drawComponent(parent,c,p,view,netNames){
   }
   return g;
 }
-export function attachGraphicEditor(svg,view,onEdit){
-  let project,drag=null;
+export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
+  let project,drag=null,selected=null;
+  function clearPin(){
+    if(selected)selected.element.removeAttribute("data-selected");
+    selected=null;
+  }
+  function choosePin(element){
+    const pin={ref:element.closest("[data-ref]").dataset.ref,pin:element.dataset.pin};
+    if(!selected){
+      selected={pin,element};element.setAttribute("data-selected","true");
+      onStatus(pin.ref+":"+pin.pin+" を選択。接続先のピンを選んでください（Escで解除）");
+      return;
+    }
+    const from=selected.pin;clearPin();
+    if(from.ref===pin.ref&&from.pin===pin.pin){onStatus("ピン選択を解除しました");return}
+    onEdit({type:"connect-pins",from,to:pin});
+  }
   const groups=new Map(),edges=[];
   function redrawLinks(ref,pos){
     for(const edge of edges){
-      if(edge.from===ref){const p=modelToSvg(pos);edge.line.setAttribute("x1",p.x);edge.line.setAttribute("y1",p.y)}
-      if(edge.to===ref){const p=modelToSvg(pos);edge.line.setAttribute("x2",p.x);edge.line.setAttribute("y2",p.y)}
+      for(const [endpoint,suffix] of [[edge.from,"1"],[edge.to,"2"]]){
+        if((view==="schematic"?endpoint.ref:endpoint)!==ref)continue;
+        const p=view==="schematic"?schematicPinPoint(pos,endpoint.pin):modelToSvg(pos);
+        edge.line.setAttribute("x"+suffix,p.x);edge.line.setAttribute("y"+suffix,p.y);
+      }
     }
   }
   function point(e){
@@ -62,6 +81,8 @@ export function attachGraphicEditor(svg,view,onEdit){
   function cancel(){if(!drag)return;const d=drag;drag=null;preview(d,d.position)}
   svg.addEventListener("pointerdown",e=>{
     if(drag||e.button!==0||!project)return;
+    if(view==="schematic"&&e.target.closest?.("[data-pin]"))return;
+    clearPin();
     const g=group(e),p=point(e);if(!g||!p)return;
     const c=project.components.find(c=>c.ref===g.dataset.ref);if(!c)return;
     e.preventDefault();g.focus();svg.setPointerCapture(e.pointerId);
@@ -81,8 +102,18 @@ export function attachGraphicEditor(svg,view,onEdit){
   });
   svg.addEventListener("pointercancel",cancel);
   svg.addEventListener("lostpointercapture",cancel);
+  svg.addEventListener("click",e=>{
+    const pin=e.target.closest?.("[data-pin]");
+    if(view==="schematic"&&pin&&svg.contains(pin)&&!drag){choosePin(pin);e.stopPropagation()}
+  });
   svg.addEventListener("keydown",e=>{
+    if(e.key==="Escape"&&selected){clearPin();onStatus("ピン選択を解除しました");return}
     if(e.key==="Escape"&&drag){cancel();return}
+    const pin=e.target.closest?.("[data-pin]");
+    if(pin){
+      if(e.key==="Enter"||e.key===" "){e.preventDefault();choosePin(pin)}
+      return;
+    }
     const g=group(e);if(!g||drag)return;
     const c=project.components.find(c=>c.ref===g.dataset.ref);if(!c)return;
     let {x,y,rotation}=c[view],step=e.shiftKey?2:.5;
@@ -97,7 +128,7 @@ export function attachGraphicEditor(svg,view,onEdit){
     onEdit({type:"place",ref:c.ref,view,x,y,rotation});groups.get(c.ref)?.focus();
   });
   return function render(next,catalog){
-    cancel();project=next;svg.replaceChildren();groups.clear();edges.length=0;
+    cancel();clearPin();project=next;svg.replaceChildren();groups.clear();edges.length=0;
     svg.setAttribute("viewBox",fitView(project,view).join(" "));
     if(view==="pcb"){
       const {width,height}=project.board;
@@ -107,6 +138,15 @@ export function attachGraphicEditor(svg,view,onEdit){
         const a=modelToSvg(byRef.get(link.from).pcb),b=modelToSvg(byRef.get(link.to).pcb);
         const line=node("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:"#f0c780","stroke-width":.12,"stroke-dasharray":".45 .3","pointer-events":"none"},svg);
         edges.push({...link,line});
+      }
+    }
+    if(view==="schematic"){
+      const byRef=new Map(project.components.map(c=>[c.ref,c]));
+      for(const link of schematicLinks(project)){
+        const a=schematicPinPoint(byRef.get(link.from.ref).schematic,link.from.pin);
+        const b=schematicPinPoint(byRef.get(link.to.ref).schematic,link.to.pin);
+        const line=node("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:"#61d1b3","stroke-width":.16,"stroke-dasharray":".5 .3","pointer-events":"none"},svg);
+        node("title",{},line,link.name);edges.push({...link,line});
       }
     }
     const [x,y,w,h]=fitView(project,view);
