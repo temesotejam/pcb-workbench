@@ -1,6 +1,6 @@
 import {modelToSvg,moveFromDrag,fitView,logicalLinks,schematicPinPoint,schematicLinks} from "./editor-geometry.js";
 import {padPoint,pcbPadLinks} from "./footprint-preview.js";
-import {routePoints} from "./route-geometry.js";
+import {routePoints,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint} from "./route-geometry.js";
 const NS="http://www.w3.org/2000/svg";
 function node(tag,attrs,parent,content){
   const e=document.createElementNS(NS,tag);
@@ -39,7 +39,7 @@ function drawComponent(parent,c,p,view,netNames,footprint){
     node("path",{d:"M 0 0 H "+w/2,stroke:"#9be4d0","stroke-width":.12},body);
     node("circle",{cx:0,cy:0,r:.12,fill:"#f0c780"},body);
     for(const pad of footprint?.pads??[]){
-      const attrs={fill:"#d3a552",stroke:"#ffe0a0","stroke-width":.06};
+      const attrs={fill:"#d3a552",stroke:"#ffe0a0","stroke-width":.06,"data-pad":pad.pin,tabindex:0,role:"button","aria-label":c.ref+" pad "+pad.pin+" "+netNames[Number(pad.pin)-1]};
       const shape=pad.shape==="circle"?node("circle",{...attrs,cx:pad.x,cy:-pad.y,r:pad.radius},body):
         node("rect",{...attrs,x:pad.x-pad.width/2,y:-pad.y-pad.height/2,width:pad.width,height:pad.height,transform:"rotate("+(-pad.rotation)+" "+pad.x+" "+(-pad.y)+")"},body);
       node("title",{},shape,c.ref+":"+pad.pin+" / "+netNames[Number(pad.pin)-1]);
@@ -50,8 +50,32 @@ function drawComponent(parent,c,p,view,netNames,footprint){
   }
   return g;
 }
-export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
-  let project,drag=null,selected=null;
+export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{},routing=null){
+  let project,footprintData,drag=null,selected=null,draft=null,overlay=null;
+  const routeMode=()=>view==="pcb"&&Boolean(routing?.enabled());
+  function clearDraft(){
+    draft=null;overlay?.remove();overlay=null;
+  }
+  function drawDraft(cursor){
+    overlay?.remove();overlay=null;
+    if(!draft)return;
+    overlay=node("g",{"pointer-events":"none","data-route-draft":"true"},svg);
+    const pts=[draft.start,...draft.waypoints,...(cursor?[cursor]:[])].map(modelToSvg);
+    node("polyline",{points:pts.map(p=>p.x+","+p.y).join(" "),stroke:"#ffd166","stroke-width":draft.width,"stroke-dasharray":".5 .25",fill:"none","stroke-linejoin":"round","stroke-linecap":"round"},overlay);
+    for(const p of pts.slice(0,cursor?-1:undefined))node("circle",{cx:p.x,cy:p.y,r:Math.max(.18,draft.width/2),fill:"#fff0aa"},overlay);
+  }
+  function choosePad(element){
+    const pin={ref:element.closest("[data-ref]").dataset.ref,pin:element.dataset.pad};
+    try{
+      if(!draft){
+        draft=beginRouteDraft(project,footprintData,pin,routing.width());drawDraft();
+        onStatus(pin.ref+":"+pin.pin+" / "+draft.net+" — 基板をクリックして経由点、同一ネットのパッドで確定（Escで解除）");
+      }else{
+        const edit=finishRouteDraft(project,footprintData,draft,pin);
+        if(routing.commit(edit))clearDraft();
+      }
+    }catch(e){onStatus(e.message)}
+  }
   function clearPin(){
     if(selected)selected.element.removeAttribute("data-selected");
     selected=null;
@@ -91,6 +115,7 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
   function cancel(){if(!drag)return;const d=drag;drag=null;preview(d,d.position)}
   svg.addEventListener("pointerdown",e=>{
     if(drag||e.button!==0||!project)return;
+    if(routeMode())return;
     if(view==="schematic"&&e.target.closest?.("[data-pin]"))return;
     clearPin();
     const g=group(e),p=point(e);if(!g||!p)return;
@@ -99,6 +124,9 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
     drag={ref:c.ref,id:e.pointerId,position:c[view],start:p,moved:false};
   });
   svg.addEventListener("pointermove",e=>{
+    if(routeMode()&&draft){
+      const p=point(e);if(p)drawDraft(snapRoutePoint(p));return;
+    }
     if(!drag||drag.id!==e.pointerId)return;
     const p=point(e);if(!p)return;
     if(Math.hypot(p.x-drag.start.x,p.y-drag.start.y)<.1&&!drag.moved)return;
@@ -112,11 +140,29 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
   });
   svg.addEventListener("pointercancel",cancel);
   svg.addEventListener("lostpointercapture",cancel);
+  svg.addEventListener("pointerleave",()=>{if(routeMode()&&draft)drawDraft()});
   svg.addEventListener("click",e=>{
+    if(routeMode()){
+      const pad=e.target.closest?.("[data-pad]");
+      if(pad&&svg.contains(pad)){pad.focus();choosePad(pad);return}
+      if(draft&&e.target.hasAttribute?.("data-board")){
+        svg.focus();
+        const p=point(e);if(!p)return;
+        try{draft=appendRouteWaypoint(project,draft,p);drawDraft();onStatus("経由点 "+draft.waypoints.length+" 個（0.25 mmスナップ）。同一ネットのパッドで確定");}
+        catch(err){onStatus(err.message)}
+      }
+      return;
+    }
     const pin=e.target.closest?.("[data-pin]");
     if(view==="schematic"&&pin&&svg.contains(pin)&&!drag){choosePin(pin);e.stopPropagation()}
   });
   svg.addEventListener("keydown",e=>{
+    if(routeMode()){
+      if(e.key==="Escape"){e.preventDefault();clearDraft();onStatus("配線選択を解除しました");return}
+      const pad=e.target.closest?.("[data-pad]");
+      if(pad&&(e.key==="Enter"||e.key===" ")){e.preventDefault();choosePad(pad)}
+      return;
+    }
     if(e.key==="Escape"&&selected){clearPin();onStatus("ピン選択を解除しました");return}
     if(e.key==="Escape"&&drag){cancel();return}
     const pin=e.target.closest?.("[data-pin]");
@@ -138,11 +184,11 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
     onEdit({type:"place",ref:c.ref,view,x,y,rotation});groups.get(c.ref)?.focus();
   });
   return function render(next,catalog,footprints){
-    cancel();clearPin();project=next;svg.replaceChildren();groups.clear();edges.length=0;
+    cancel();clearPin();clearDraft();project=next;footprintData=footprints;svg.replaceChildren();groups.clear();edges.length=0;
     svg.setAttribute("viewBox",fitView(project,view).join(" "));
     if(view==="pcb"){
       const {width,height}=project.board;
-      node("rect",{x:-width/2,y:-height/2,width,height,fill:"#16332e",stroke:"#61d1b3","stroke-width":.16},svg);
+      node("rect",{x:-width/2,y:-height/2,width,height,fill:"#16332e",stroke:"#61d1b3","stroke-width":.16,"data-board":"true"},svg);
       for(const route of project.routes??[]){
         try{
           const pts=routePoints(project,footprints,route).map(modelToSvg);

@@ -17,7 +17,16 @@ function setProject(next,message){
 }
 function action(edit){try{setProject(applyEdit(project,edit,catalog),"変更を反映しました")}catch(e){status(e.message)}}
 const renderSchematic=attachGraphicEditor($("schematic-view"),"schematic",action,status);
-const renderPcb=attachGraphicEditor($("pcb-view"),"pcb",action);
+const renderPcb=attachGraphicEditor($("pcb-view"),"pcb",action,status,{
+  enabled:()=>$("route-mode").checked,
+  width:()=>$("route-width").valueAsNumber,
+  commit:addRoute
+});
+$("route-mode").onchange=()=>{
+  if(!project)return;
+  renderPcb(project,catalog,footprints);
+  status($("route-mode").checked?"配線モード：始点の実パッドを選んでください":"配置モード：部品の移動・回転");
+};
 function table(parent,headers){parent.replaceChildren();const t=el("table",null,parent),h=el("tr",null,el("thead",null,t));for(const title of headers)el("th",title,h);return el("tbody",null,t)}
 function placement(parent,c,view){
   const f=el("form",null,parent),inputs=[];
@@ -69,13 +78,19 @@ function renderRoutes(){
     el("td",note,row);button(el("td",null,row),"削除",()=>action({type:"remove-route",id:route.id}));
   }
 }
+function addRoute(edit){
+  try{
+    const next=applyEdit(project,edit,catalog);
+    routePoints(next,footprints,next.routes.at(-1));
+    setProject(next,"仮配線を追加しました（製造出力不可）");
+    return true;
+  }catch(err){status(err.message);return false}
+}
 $("route-form").onsubmit=e=>{
   e.preventDefault();
   try{
     const pin=id=>{const [ref,pin]=$(id).value.split(":");return {ref,pin}};
-    const next=applyEdit(project,{type:"add-route",from:pin("route-from"),to:pin("route-to"),width:$("route-width").valueAsNumber,waypoints:parseWaypoints($("route-points").value)},catalog);
-    routePoints(next,footprints,next.routes.at(-1));
-    setProject(next,"仮配線を追加しました（製造出力不可）");$("route-points").value="";
+    if(addRoute({type:"add-route",from:pin("route-from"),to:pin("route-to"),width:$("route-width").valueAsNumber,waypoints:parseWaypoints($("route-points").value)}))$("route-points").value="";
   }catch(err){status(err.message)}
 };
 try{
