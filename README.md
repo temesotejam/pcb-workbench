@@ -14,7 +14,7 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 
 ### Manual top-layer routing draft (development)
 
-- Candidate manual export: the build opts into complete explicit top-layer routing, disables automatic routing and injects exact Circuit JSON wire points only after checking source pin, PCB port and real pad center agreement. Partial nets, missing geometry or unexpected existing copper fail closed. Two new manual fixture boards exercise the existing KiCad pipeline. CI verification pending; no production approval.
+- Candidate manual export: the build opts into complete explicit top-layer routing, disables automatic routing and injects exact Circuit JSON wire points only after checking source pin, PCB port and real pad center agreement. Partial nets, missing geometry or unexpected existing copper fail closed. Two new manual fixture boards exercise the existing KiCad pipeline. A serialized segment audit checks coordinates, width, top copper and net identity; independent DRC remains separate. CI verification pending; no production approval.
 
 - Graphical route mode: choose a real pad, click the board to place 0.25 mm snapped waypoints, then select a different pad on the same logical net. The selected width is fixed at the start; Escape or leaving the mode discards the uncommitted draft. Numeric entry remains available. Physical DRC is not performed in the editor; candidate build export requires independent verification.
 

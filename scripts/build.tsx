@@ -9,7 +9,7 @@ import { projectToCircuitPlan, planMetadata, neutralEnginePlan, restoreEngineNet
 import { NativeDesign } from "./native-design"
 import catalog from "../library/catalog.json"
 import { normalizeFootprint } from "../site/footprint-preview.js"
-import { injectManualRoutes } from "./manual-route-export.js"
+import { injectManualRoutes, verifyKicadManualSegments } from "./manual-route-export.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -287,6 +287,12 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
     if(plan){
       const labels=prepared.schematicFiles.map(f=>restore(f.content)).join("\n")
       const pcbText=restore(prepared.pcbText)
+      if(plan.manualProject){
+        if(sexprBlocks(pcbText,"(via ").length||sexprBlocks(pcbText,"(zone ").length)throw new Error("Unexpected KiCad vias or zones in manual top-layer mode")
+        const audit=verifyKicadManualSegments(pcbText,sexprBlocks(pcbText,"(segment").map(b=>b.text),json,plan.manualProject)
+        console.log(id,"serialized manual route parity",JSON.stringify(audit))
+        await writeFile(resolve(path,"manual-route-parity.json"),JSON.stringify(audit,null,2));result.files.push("manual-route-parity.json")
+      }
       for(const name of plan.nets){
         if(!labels.includes('(label "'+name+'"'))throw new Error("Missing explicit local KiCad label: "+name)
         if(!pcbText.includes('"/'+name+'"'))throw new Error("Missing explicit local PCB net: "+name)

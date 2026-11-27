@@ -77,7 +77,7 @@ test("graphical draft rejects repeated and out-of-board points without corruptin
   assert.throws(()=>appendRouteWaypoint(p,{...b,waypoints:Array.from({length:100},(_,i)=>({x:i,y:4}))},{x:0,y:0}),/Too many/);
 });
 
-import {injectManualRoutes,requireCompleteManualRoutes} from "../scripts/manual-route-export.js";
+import {injectManualRoutes,requireCompleteManualRoutes,verifyKicadManualSegments} from "../scripts/manual-route-export.js";
 function manualCase(){
   const p=fixture();
   p.routes=p.nets.map((n,i)=>({id:"T"+(i+1),net:n.name,layer:"top",width:.25,from:n.pins[0],to:n.pins[1],waypoints:[{x:0,y:i? -4:4}]}));
@@ -123,4 +123,22 @@ test("manual export rejects missing net, geometry drift, missing physical pad an
   assert.throws(()=>injectManualRoutes(json.filter(e=>e.type!=="pcb_smtpad"),p,f,aliases),/physical pad/);
   assert.throws(()=>injectManualRoutes([...json,{type:"pcb_trace"}],p,f,aliases),/existing copper/);
   assert.throws(()=>injectManualRoutes(json,p,{},aliases),/Exact pad unavailable/);
+});
+
+test("serialized KiCad parity rejects changed waypoint, width, net, layer or extra copper",()=>{
+  const {p,f,json,aliases}=manualCase(),out=injectManualRoutes(json,p,f,aliases);
+  const header=p.nets.map((n,i)=>'(net '+(i+1)+' "/'+n.name+'")').join("\n");
+  const blocks=out.filter(e=>e.type==="pcb_trace").flatMap((t,i)=>t.route.slice(1).map((b,j)=>{
+    const a=t.route[j];
+    return '(segment (start '+(100+a.x)+' '+(100-a.y)+') (end '+(100+b.x)+' '+(100-b.y)+') (width '+a.width+') (layer "F.Cu") (net '+(i+1)+'))';
+  }));
+  const verify=b=>verifyKicadManualSegments(header,b,out,p);
+  assert.deepEqual(verify(blocks),{routes:2,segments:4,coordinateResolutionMm:.00001,physicalDrcVerified:false,orderReady:false});
+  for(const changed of [
+    blocks[0].replace("(end 100 96)","(end 100 95.5)"),
+    blocks[0].replace("(width 0.25)","(width 0.3)"),
+    blocks[0].replace("(net 1)","(net 2)"),
+    blocks[0].replace('"F.Cu"','"B.Cu"')
+  ])assert.throws(()=>verify([changed,...blocks.slice(1)]));
+  assert.throws(()=>verify([...blocks,blocks[0]]),/parity mismatch/);
 });

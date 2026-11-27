@@ -59,3 +59,48 @@ export function injectManualRoutes(json,project,footprints,aliases){
   });
   return [...json,...traces];
 }
+
+// Compare the serialized KiCad output, not just the in-memory routes.
+// The pinned converter v0.0.282 maps (x,y) -> (100+x,100-y) in mm.
+// A changed converter transform or serialization fails closed.
+export function verifyKicadManualSegments(pcbText,segmentBlocks,json,project){
+  const netIds=new Map();
+  for(const m of pcbText.matchAll(/\(net\s+(\d+)\s+"([^"]*)"\s*\)/g)){
+    const id=Number(m[1]),name=m[2];
+    if(netIds.has(name)&&netIds.get(name)!==id)throw new Error("Ambiguous serialized KiCad net: "+name);
+    netIds.set(name,id);
+  }
+  const number=n=>{
+    const v=Number(n);
+    if(!Number.isFinite(v))throw new Error("Invalid KiCad segment coordinate/width");
+    return Math.round(v*1e5)||0;
+  };
+  const signature=(a,b,w,layer,net)=>{
+    if(!Number.isInteger(net)||net<=0||layer!=="F.Cu"||!(Number(w)>0))throw new Error("Invalid manual KiCad segment layer, width or net");
+    const ends=[a,b].map(p=>[number(p.x),number(p.y)].join(",")).sort();
+    return [net,layer,number(w),...ends].join("|");
+  };
+  const expected=[];
+  for(const t of project.routes){
+    const trace=one(json.filter(e=>e.type==="pcb_trace"&&e.pcb_trace_id==="pcb_trace_manual_"+t.id),"Missing compiled route "+t.id);
+    const net=netIds.get("/"+t.net);
+    if(!net)throw new Error("Manual route KiCad net missing: "+t.net);
+    const transform=p=>({x:100+p.x,y:100-p.y});
+    for(let i=1;i<trace.route.length;i++)expected.push(signature(transform(trace.route[i-1]),transform(trace.route[i]),t.width,"F.Cu",net));
+  }
+  const field=(block,re,name)=>{
+    const m=block.match(re);
+    if(!m)throw new Error("Missing serialized segment "+name);
+    return m;
+  };
+  const actual=segmentBlocks.map(block=>{
+    const a=field(block,/\(start\s+([^\s()]+)\s+([^\s()]+)\s*\)/,"start"),b=field(block,/\(end\s+([^\s()]+)\s+([^\s()]+)\s*\)/,"end");
+    const width=field(block,/\(width\s+([^\s()]+)\s*\)/,"width")[1];
+    const layer=field(block,/\(layer\s+"([^"]+)"\s*\)/,"layer")[1];
+    const net=Number(field(block,/\(net\s+(\d+)\s*\)/,"net")[1]);
+    return signature({x:a[1],y:a[2]},{x:b[1],y:b[2]},width,layer,net);
+  });
+  expected.sort();actual.sort();
+  if(expected.length!==actual.length||expected.some((s,i)=>s!==actual[i]))throw new Error("Serialized KiCad manual segment parity mismatch");
+  return {routes:project.routes.length,segments:expected.length,coordinateResolutionMm:0.00001,physicalDrcVerified:false,orderReady:false};
+}
