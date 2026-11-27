@@ -8,6 +8,7 @@ import { jlcpcbFootprintResolver } from "../library/footprints"
 import { projectToCircuitPlan, planMetadata, neutralEnginePlan, restoreEngineNetNames } from "./project-adapter.js"
 import { NativeDesign } from "./native-design"
 import catalog from "../library/catalog.json"
+import { normalizeFootprint } from "../site/footprint-preview.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -233,6 +234,15 @@ const handoff=await Bun.build({entrypoints:[resolve(root,"site/handoff-entry.js"
 if(!handoff.success)throw new Error(handoff.logs.map(String).join("\n"))
 await rm(resolve(out,"handoff-entry.js"))
 await cp(resolve(root,"library","catalog.json"),resolve(out,"catalog.json"))
+// Publish only supported numeric pad geometry, not raw library assets or model metadata.
+const parts:Record<string,unknown>={}
+for(const p of catalog.parts){
+  try{
+    const exact=await jlcpcbFootprintResolver(p.lcsc)
+    parts[p.lcsc]={pads:normalizeFootprint(exact.footprintCircuitJson),source:"exact LCSC footprint resolver",geometryReviewed:false}
+  }catch(e){console.warn("Preview unavailable for",p.lcsc,String(e));parts[p.lcsc]={pads:[],error:"Exact pad preview unavailable"}}
+}
+await writeFile(resolve(out,"footprint-preview.json"),JSON.stringify({version:1,parts},null,2))
 }
 const index=[]
 let failed=false

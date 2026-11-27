@@ -2,7 +2,7 @@ import {createProject,validateProject,applyEdit,inspectProject} from "./project-
 import {attachGraphicEditor} from "./editor-graphics.js";
 const $=id=>document.getElementById(id);
 const key="pcb-workbench.native-project.v1";
-let catalog,project;
+let catalog,project,footprints;
 const el=(tag,text,parent)=>{const node=document.createElement(tag);if(text!==null)node.textContent=text;if(parent)parent.append(node);return node};
 function option(select,value,text){const o=el("option",text,select);o.value=value;return o}
 function button(parent,text,click){const b=el("button",text,parent);b.type="button";b.onclick=click;return b}
@@ -42,11 +42,14 @@ function render(){
   }
   const nets=table($("nets"),["ネット","接続ピン","操作"]);
   for(const n of project.nets){const row=el("tr",null,nets);el("td",n.name,row);el("td",n.pins.map(p=>p.ref+":"+p.pin).join(", ")||"未接続",row);button(el("td",null,row),"削除",()=>action({type:"remove-net",name:n.name}))}
-  renderSchematic(project,catalog);renderPcb(project,catalog);
+  renderSchematic(project,catalog);renderPcb(project,catalog,footprints);
+  const missing=project.components.filter(c=>footprints?.parts?.[c.lcsc]?.pads?.length!==2).map(c=>c.ref);
+  $("footprint-status").textContent=missing.length?"実パッド未取得: "+missing.join(", ")+"。関連する接続線は表示しません。":"登録部品の取得済み実パッドを表示（製造承認なし）。";
   const report=inspectProject(project,catalog);$("diagnostics").textContent=report.issues.length?report.issues.join("\n"):"論理検査の指摘なし（製造可否は未確認）";
 }
 try{
   const response=await fetch("catalog.json");if(!response.ok)throw new Error("Catalog HTTP "+response.status);catalog=await response.json();
+  try{const res=await fetch("footprint-preview.json");if(!res.ok)throw new Error("HTTP "+res.status);const data=await res.json();if(data.version===1&&data.parts)footprints=data}catch{/* editor stays usable without geometry */}
   for(const p of catalog.parts.filter(p=>["resistor","capacitor"].includes(p.kind)))option($("part"),p.lcsc,p.lcsc+" / "+p.value+" / "+p.package);
   project=createProject();let message="新規プロジェクト";
   try{const stored=localStorage.getItem(key);if(stored){project=validateProject(JSON.parse(stored),catalog);message="保存済みプロジェクトを復元しました"}}
