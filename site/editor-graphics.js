@@ -1,6 +1,6 @@
 import {modelToSvg,moveFromDrag,fitView,logicalLinks,schematicPinPoint,schematicLinks} from "./editor-geometry.js";
 import {padPoint,pcbPadLinks} from "./footprint-preview.js";
-import {routePoints,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint} from "./route-geometry.js";
+import {routeCopper,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint} from "./route-geometry.js";
 const NS="http://www.w3.org/2000/svg";
 function node(tag,attrs,parent,content){
   const e=document.createElementNS(NS,tag);
@@ -191,9 +191,18 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{},routing=null
       node("rect",{x:-width/2,y:-height/2,width,height,fill:"#16332e",stroke:"#61d1b3","stroke-width":.16,"data-board":"true"},svg);
       for(const route of project.routes??[]){
         try{
-          const pts=routePoints(project,footprints,route).map(modelToSvg);
-          const path=node("polyline",{points:pts.map(p=>p.x+","+p.y).join(" "),fill:"none",stroke:"#db8251","stroke-width":route.width,"stroke-linecap":"round","stroke-linejoin":"round","pointer-events":"none"},svg);
-          node("title",{},path,route.id+" / "+route.net+" / draft top copper");
+          const copper=routeCopper(project,footprints,route);
+          for(const s of copper.segments){
+            const a=modelToSvg(s.from),b=modelToSvg(s.to);
+            const line=node("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:s.layer==="top"?"#db8251":"#75a7f5","stroke-width":s.width,"stroke-linecap":"round","pointer-events":"none"},svg);
+            node("title",{},line,route.id+" / "+route.net+" / draft "+s.layer+" copper");
+          }
+          for(const via of copper.vias){
+            const p=modelToSvg(via);
+            const ring=node("circle",{cx:p.x,cy:p.y,r:via.diameter/2,fill:"#d3a552","pointer-events":"none"},svg);
+            node("title",{},ring,route.id+" / "+route.net+" / through-via");
+            node("circle",{cx:p.x,cy:p.y,r:via.drill/2,fill:"#16332e","pointer-events":"none"},svg);
+          }
         }catch{/* unavailable route is reported in the route table */}
       }
       const byRef=new Map(project.components.map(c=>[c.ref,c]));
