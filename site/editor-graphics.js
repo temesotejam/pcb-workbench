@@ -1,4 +1,5 @@
 import {modelToSvg,moveFromDrag,fitView,logicalLinks,schematicPinPoint,schematicLinks} from "./editor-geometry.js";
+import {padPoint,pcbPadLinks} from "./footprint-preview.js";
 const NS="http://www.w3.org/2000/svg";
 function node(tag,attrs,parent,content){
   const e=document.createElementNS(NS,tag);
@@ -12,7 +13,7 @@ function label(parent,x,y,text,size=1.4,anchor="middle"){
 }
 function transform(p){const {x,y}=modelToSvg(p);return "translate("+x+" "+y+")"}
 function short(s){return s.length>14?s.slice(0,13)+"…":s}
-function drawComponent(parent,c,p,view,netNames){
+function drawComponent(parent,c,p,view,netNames,footprint){
   const pos=c[view],g=node("g",{transform:transform(pos),"data-ref":c.ref,tabindex:0,role:"button","aria-label":c.ref+" "+p.value+" "+view+" placement"},parent);
   node("title",{},g,c.ref+" / "+p.lcsc+" / "+p.value);
   const body=node("g",{transform:"rotate("+(-pos.rotation)+")"},g);
@@ -36,7 +37,15 @@ function drawComponent(parent,c,p,view,netNames){
     node("rect",{x:-w/2,y:-h/2,width:w,height:h,rx:.12,fill:"#315a55",stroke:"#9be4d0","stroke-width":.12},body);
     node("path",{d:"M 0 0 H "+w/2,stroke:"#9be4d0","stroke-width":.12},body);
     node("circle",{cx:0,cy:0,r:.12,fill:"#f0c780"},body);
-    label(g,0,-1.8,c.ref,1.05);
+    for(const pad of footprint?.pads??[]){
+      const attrs={fill:"#d3a552",stroke:"#ffe0a0","stroke-width":.06};
+      const shape=pad.shape==="circle"?node("circle",{...attrs,cx:pad.x,cy:-pad.y,r:pad.radius},body):
+        node("rect",{...attrs,x:pad.x-pad.width/2,y:-pad.y-pad.height/2,width:pad.width,height:pad.height,transform:"rotate("+(-pad.rotation)+" "+pad.x+" "+(-pad.y)+")"},body);
+      node("title",{},shape,c.ref+":"+pad.pin+" / "+netNames[Number(pad.pin)-1]);
+      const pin=label(body,pad.x,-pad.y+.2,pad.pin,.55);
+      pin.setAttribute("transform","rotate("+pos.rotation+" "+pad.x+" "+(-pad.y+.2)+")");
+    }
+    label(g,0,-1.8,c.ref+(footprint?.pads?.length===2?"":" ?pad"),1.05);
   }
   return g;
 }
@@ -61,8 +70,8 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
   function redrawLinks(ref,pos){
     for(const edge of edges){
       for(const [endpoint,suffix] of [[edge.from,"1"],[edge.to,"2"]]){
-        if((view==="schematic"?endpoint.ref:endpoint)!==ref)continue;
-        const p=view==="schematic"?schematicPinPoint(pos,endpoint.pin):modelToSvg(pos);
+        if(endpoint.ref!==ref)continue;
+        const p=view==="schematic"?schematicPinPoint(pos,endpoint.pin):padPoint(pos,endpoint.pad);
         edge.line.setAttribute("x"+suffix,p.x);edge.line.setAttribute("y"+suffix,p.y);
       }
     }
@@ -127,15 +136,15 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
     x=Math.max(-10000,Math.min(10000,x));y=Math.max(-10000,Math.min(10000,y));
     onEdit({type:"place",ref:c.ref,view,x,y,rotation});groups.get(c.ref)?.focus();
   });
-  return function render(next,catalog){
+  return function render(next,catalog,footprints){
     cancel();clearPin();project=next;svg.replaceChildren();groups.clear();edges.length=0;
     svg.setAttribute("viewBox",fitView(project,view).join(" "));
     if(view==="pcb"){
       const {width,height}=project.board;
       node("rect",{x:-width/2,y:-height/2,width,height,fill:"#16332e",stroke:"#61d1b3","stroke-width":.16},svg);
       const byRef=new Map(project.components.map(c=>[c.ref,c]));
-      for(const link of logicalLinks(project)){
-        const a=modelToSvg(byRef.get(link.from).pcb),b=modelToSvg(byRef.get(link.to).pcb);
+      for(const link of pcbPadLinks(project,footprints)){
+        const a=padPoint(byRef.get(link.from.ref).pcb,link.from.pad),b=padPoint(byRef.get(link.to.ref).pcb,link.to.pad);
         const line=node("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:"#f0c780","stroke-width":.12,"stroke-dasharray":".45 .3","pointer-events":"none"},svg);
         edges.push({...link,line});
       }
@@ -155,7 +164,7 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
     const netByPin=new Map(project.nets.flatMap(n=>n.pins.map(p=>[p.ref+":"+p.pin,n.name])));
     for(const c of project.components){
       const names=["1","2"].map(pin=>netByPin.get(c.ref+":"+pin)??"NC");
-      groups.set(c.ref,drawComponent(svg,c,partById.get(c.lcsc),view,names));
+      groups.set(c.ref,drawComponent(svg,c,partById.get(c.lcsc),view,names,footprints?.parts?.[c.lcsc]));
     }
   }
 }
