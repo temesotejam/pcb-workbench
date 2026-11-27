@@ -23,12 +23,32 @@ export function routePoints(project,footprints,route){
   return points;
 }
 
+// Each marked waypoint is a through-via; top SMD endpoints always start/end on top.
+export function routeCopper(project,footprints,route){
+  const points=routePoints(project,footprints,route),segments=[],vias=[];
+  let layer="top";
+  for(let i=1;i<points.length;i++){
+    const a=points[i-1],b=points[i];
+    segments.push({from:{x:a.x,y:a.y},to:{x:b.x,y:b.y},layer,width:route.width});
+    if(b.via!==undefined){
+      const v=b.via;
+      if(!v||!Number.isFinite(v.diameter)||!Number.isFinite(v.drill)||v.drill<.1||v.diameter>5||v.diameter<route.width||v.diameter-v.drill<.1-1e-9)throw new Error("Invalid through-via");
+      checkPoint(project,b,v.diameter);
+      vias.push({x:b.x,y:b.y,diameter:v.diameter,drill:v.drill});
+      layer=layer==="top"?"bottom":"top";
+    }
+  }
+  if(layer!=="top")throw new Error("Top SMD endpoints require an even number of layer transitions");
+  return {segments,vias};
+}
+
 export function parseWaypoints(value){
   if(!value.trim())return [];
   return value.trim().split(/\n/).map(line=>{
     const fields=line.trim().split(/\s*,\s*/);
-    if(fields.length!==2||fields.some(s=>!s.trim()||!Number.isFinite(Number(s))))throw new Error("Waypoint format: x,y in mm, one per line");
-    return {x:Number(fields[0]),y:Number(fields[1])};
+    if(![2,4].includes(fields.length)||fields.some(s=>!s.trim()||!Number.isFinite(Number(s))))throw new Error("Waypoint format: x,y or x,y,viaDiameter,viaDrill in mm, one per line");
+    const [x,y,diameter,drill]=fields.map(Number);
+    return {x,y,...(fields.length===4?{via:{diameter,drill}}:{})};
   });
 }
 
