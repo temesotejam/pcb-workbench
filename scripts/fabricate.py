@@ -7,6 +7,7 @@ import math
 import pathlib
 import re
 import subprocess
+import shutil
 import sys
 import zipfile
 
@@ -69,16 +70,44 @@ def process(root, meta_path):
     board, sch = dest/"board.kicad_pcb", dest/"board.kicad_sch"
     draft = dest / "draft"
     gerber = draft / "gerber"
-    gerber.mkdir(parents=True, exist_ok=True)
+    # Never use reports or fabrication files left by an earlier revision.
+    if draft.exists():
+        shutil.rmtree(draft)
+    for name in ("erc.json", "drc.json", "validation.json"):
+        (dest/name).unlink(missing_ok=True)
+    summary.pop("draftFiles", None)
+    summary["files"] = [n for n in summary["files"] if n not in ("erc.json", "drc.json", "validation.json")]
+    warnings = []
+
+    def finish(ok):
+        if not ok:
+            if draft.exists():
+                shutil.rmtree(draft)
+            summary.pop("draftFiles", None)
+        blockers.append("Production release gate disabled; manual JLCPCB preview and engineering review not implemented.")
+        summary.update(status="draft" if ok else "blocked", blockers=blockers, orderReady=False)
+        validation_text = json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False},indent=2)
+        (dest/"validation.json").write_text(validation_text)
+        if ok:
+            (draft/"validation.json").write_text(validation_text)
+            for report in (dest/"erc.json",dest/"drc.json"):
+                (draft/report.name).write_bytes(report.read_bytes())
+        summary["files"].append("validation.json")
+        summary_path.write_text(json.dumps(summary,indent=2))
+        return ok
     # Absolute coordinates for all three exports; no independently shifted origins.
     checks = [
         ["sch","erc","--severity-all","--format","json","-o",dest/"erc.json",sch],
         ["pcb","drc","--schematic-parity","--severity-all","--format","json","-o",dest/"drc.json",board],
     ]
-    checks_ok = True
-    warnings = []
+    checks_ok = not blockers
     for cmd in checks:
-        if run(cmd,log) != 0:
+        try:
+            code = run(cmd,log)
+        except OSError as exc:
+            code = -1
+            blockers.append(str(exc))
+        if code != 0:
             checks_ok = False
             blockers.append(cmd[1].upper() + " command failed")
     erc_path, drc_path = dest/"erc.json", dest/"drc.json"
@@ -88,9 +117,34 @@ def process(root, meta_path):
         else:
             checks_ok = False
             blockers.append(report + " missing")
-    if erc_path.is_file():
-        erc = json.loads(erc_path.read_text())
-        violations = [v for sheet in erc.get("sheets",[]) for v in sheet.get("violations",[])]
+    def read_report(path, required_list):
+        nonlocal checks_ok
+        if not path.is_file():
+            return None
+        try:
+            report = json.loads(path.read_text())
+            if not isinstance(report, dict) or not isinstance(report.get(required_list), list):
+                raise ValueError("missing or invalid " + required_list)
+            if required_list == "sheets":
+                if not report["sheets"] or any(not isinstance(s, dict) or not isinstance(s.get("violations"), list) for s in report["sheets"]):
+                    raise ValueError("invalid ERC sheets")
+                findings = [v for s in report["sheets"] for v in s["violations"]]
+            else:
+                for key in ("schematic_parity", "unconnected_items"):
+                    if key in report and not isinstance(report[key], list):
+                        raise ValueError("invalid " + key)
+                findings = report["violations"]
+            if any(not isinstance(v, dict) for v in findings):
+                raise ValueError("invalid finding")
+            return report
+        except (ValueError, OSError) as exc:
+            checks_ok = False
+            blockers.append(path.name + ": " + str(exc))
+            return None
+
+    erc = read_report(erc_path, "sheets")
+    if erc is not None:
+        violations = [v for sheet in erc["sheets"] for v in sheet["violations"]]
         errors = [v for v in violations if str(v.get("severity","")).lower() in ("error","fatal","fatalerror")]
         unknown = [v for v in violations if str(v.get("severity","")).lower() not in ("error","fatal","fatalerror","warning","exclusion")]
         warnings.extend({"source":"ERC",**v} for v in violations if str(v.get("severity","")).lower()=="warning")
@@ -100,8 +154,8 @@ def process(root, meta_path):
         if unknown:
             checks_ok = False
             blockers.append("ERC has findings with unknown severity")
-    if drc_path.is_file():
-        drc = json.loads(drc_path.read_text())
+    drc = read_report(drc_path, "violations")
+    if drc is not None:
         violations = drc.get("violations",[])
         errors = [v for v in violations if str(v.get("severity","")).lower() in ("error","fatal","fatalerror")]
         unknown = [v for v in violations if str(v.get("severity","")).lower() not in ("error","fatal","fatalerror","warning","exclusion")]
@@ -120,13 +174,17 @@ def process(root, meta_path):
         if unconnected:
             checks_ok = False
             blockers.append("PCB has " + str(len(unconnected)) + " unconnected item(s)")
+    # A failed electrical or geometric check is not a fabrication candidate.
+    if not checks_ok:
+        return finish(False)
+    gerber.mkdir(parents=True, exist_ok=True)
     commands = [
         ["pcb","export","gerbers","--layers",",".join(meta["layers"]),"-o",str(gerber)+"/",board],
         ["pcb","export","drill","--format","excellon","-o",str(gerber)+"/",board],
         ["pcb","export","pos","--format","csv","--units","mm","--side","both","--exclude-dnp","-o",draft/"positions.csv",board],
     ]
-    ok = all(run(cmd,log) == 0 for cmd in commands)
     try:
+        ok = all(run(cmd,log) == 0 for cmd in commands)
         if not ok:
             raise ValueError("KiCad export failed")
         plotted = sorted(p for p in gerber.iterdir() if p.is_file() and p.stat().st_size)
@@ -150,20 +208,7 @@ def process(root, meta_path):
     except (ValueError,KeyError,OSError) as e:
         blockers.append(str(e))
         ok = False
-    # v0.1 always fails closed for manufacturing. Later releases must implement
-    # revision-bound approval, part evidence, JLCPCB rule profiles and pin/net parity.
-    blockers.append("Production release gate disabled in v0.1; manual JLCPCB preview and engineering review not implemented.")
-    ok = ok and checks_ok
-    summary.update(status="draft" if ok else "blocked", blockers=blockers, orderReady=False)
-    validation_text = json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False},indent=2)
-    (dest/"validation.json").write_text(validation_text)
-    (draft/"validation.json").write_text(validation_text)
-    for report in (erc_path,drc_path):
-        if report.is_file():
-            (draft/report.name).write_bytes(report.read_bytes())
-    summary["files"].append("validation.json")
-    summary_path.write_text(json.dumps(summary,indent=2))
-    return ok
+    return finish(ok)
 
 if __name__ == "__main__":
     dist = pathlib.Path(sys.argv[1] if len(sys.argv)>1 else "dist").resolve()
