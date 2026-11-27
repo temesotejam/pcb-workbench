@@ -1,0 +1,16 @@
+{
+  "id": "native-rc-manual",
+  "layers": [
+    "F.Cu",
+    "B.Cu",
+    "F.Paste",
+    "B.Paste",
+    "F.Mask",
+    "B.Mask",
+    "F.SilkS",
+    "B.SilkS",
+    "Edge.Cuts"
+  ],
+  "name": "Independent parallel RC — explicit manual routing",
+  "purpose": "Manual routing integration fixture; not order-ready"
+}

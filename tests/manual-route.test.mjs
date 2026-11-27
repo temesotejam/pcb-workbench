@@ -76,3 +76,51 @@ test("graphical draft rejects repeated and out-of-board points without corruptin
   assert.deepEqual(b.waypoints,[{x:0,y:4}]);
   assert.throws(()=>appendRouteWaypoint(p,{...b,waypoints:Array.from({length:100},(_,i)=>({x:i,y:4}))},{x:0,y:0}),/Too many/);
 });
+
+import {injectManualRoutes,requireCompleteManualRoutes} from "../scripts/manual-route-export.js";
+function manualCase(){
+  const p=fixture();
+  p.routes=p.nets.map((n,i)=>({id:"T"+(i+1),net:n.name,layer:"top",width:.25,from:n.pins[0],to:n.pins[1],waypoints:[{x:0,y:i? -4:4}]}));
+  const f=syntheticGeometry(p),json=[],aliases=new Map(p.nets.map((n,i)=>["alias"+i,n.name]));
+  for(const c of p.components){
+    json.push({type:"source_component",name:c.ref,source_component_id:c.ref});
+    for(const pin of ["1","2"]){
+      const id=c.ref+":"+pin,local=f.parts[c.lcsc].pads.find(p=>p.pin===pin),x=c.pcb.x+local.x,y=c.pcb.y+local.y;
+      json.push({type:"source_port",source_component_id:c.ref,source_port_id:id,pin_number:Number(pin)},
+        {type:"pcb_port",source_port_id:id,pcb_port_id:"P"+id,layers:["top"],x,y},
+        {type:"pcb_smtpad",pcb_port_id:"P"+id,layer:"top",x,y});
+    }
+  }
+  for(const [alias,name] of aliases){
+    json.push({type:"source_net",name:alias,source_net_id:alias,subcircuit_connectivity_map_key:"key_"+alias});
+    for(const pin of p.nets.find(n=>n.name===name).pins)json.push({type:"source_trace",source_trace_id:alias+pin.ref,connected_source_net_ids:[alias],connected_source_port_ids:[pin.ref+":"+pin.pin]});
+  }
+  return {p,f,json,aliases};
+}
+test("manual export opt-in preserves explicit route data and leaves legacy refusal intact",()=>{
+  const {p}=manualCase();
+  assert.throws(()=>projectToCircuitPlan(p,catalog),/refusing to substitute autorouting/);
+  const plan=projectToCircuitPlan(p,catalog,{allowManual:true});
+  assert.deepEqual(plan.manualProject,p);assert.notEqual(plan.manualProject,p);assert.equal(plan.orderReady,false);
+});
+test("complete explicit manual graph compiles exact wire coordinates, widths and net identities",()=>{
+  const {p,f,json,aliases}=manualCase(),before=JSON.stringify(json);
+  const out=injectManualRoutes(json,p,f,aliases),traces=out.filter(e=>e.type==="pcb_trace");
+  assert.equal(traces.length,2);
+  for(const [i,t] of traces.entries()){
+    assert.deepEqual(t.route.map(({x,y})=>({x,y})),routePoints(p,f,p.routes[i]));
+    assert.ok(t.route.every(r=>r.width===.25&&r.layer==="top"));
+    assert.equal(t.subcircuit_connectivity_map_key,"key_alias"+i);
+    assert.equal(t.route[0].start_pcb_port_id,"P"+p.routes[i].from.ref+":"+p.routes[i].from.pin);
+  }
+  assert.equal(JSON.stringify(json),before);
+});
+test("manual export rejects missing net, geometry drift, missing physical pad and existing copper",()=>{
+  const {p,f,json,aliases}=manualCase();
+  assert.throws(()=>requireCompleteManualRoutes({...p,routes:p.routes.slice(0,1)}),/Manual net incomplete/);
+  const shifted=json.map(e=>e.type==="pcb_smtpad"?{...e,x:e.x+.1}:e);
+  assert.throws(()=>injectManualRoutes(shifted,p,f,aliases),/pad position mismatch/);
+  assert.throws(()=>injectManualRoutes(json.filter(e=>e.type!=="pcb_smtpad"),p,f,aliases),/physical pad/);
+  assert.throws(()=>injectManualRoutes([...json,{type:"pcb_trace"}],p,f,aliases),/existing copper/);
+  assert.throws(()=>injectManualRoutes(json,p,{},aliases),/Exact pad unavailable/);
+});

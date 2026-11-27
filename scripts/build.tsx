@@ -9,6 +9,7 @@ import { projectToCircuitPlan, planMetadata, neutralEnginePlan, restoreEngineNet
 import { NativeDesign } from "./native-design"
 import catalog from "../library/catalog.json"
 import { normalizeFootprint } from "../site/footprint-preview.js"
+import { injectManualRoutes } from "./manual-route-export.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -224,7 +225,7 @@ const args=process.argv.slice(2)
 if(args.length!==0&&(args.length!==2||args[0]!=="--project-json"))throw new Error("Usage: bun run build [--project-json FILE]")
 const standalone=args.length===2
 // Parse before removing output; do not publish arbitrary browser exports to Pages.
-const input=standalone?projectToCircuitPlan(JSON.parse(await readFile(resolve(args[1]),"utf8")),catalog):null
+const input=standalone?projectToCircuitPlan(JSON.parse(await readFile(resolve(args[1]),"utf8")),catalog,{allowManual:true}):null
 const out=resolve(root,standalone?"dist-native":"dist")
 await rm(out,{recursive:true,force:true})
 await mkdir(out,{recursive:true})
@@ -249,7 +250,7 @@ let failed=false
 for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects"))).sort())){
   if(!/^[a-z0-9][a-z0-9-]*$/.test(id))throw new Error("Invalid project slug: "+id)
   const dir=resolve(root,"projects",id)
-  const plan=input??(await Bun.file(resolve(dir,"native.json")).exists()?projectToCircuitPlan(JSON.parse(await readFile(resolve(dir,"native.json"),"utf8")),catalog):null)
+  const plan=input??(await Bun.file(resolve(dir,"native.json")).exists()?projectToCircuitPlan(JSON.parse(await readFile(resolve(dir,"native.json"),"utf8")),catalog,{allowManual:true}):null)
   const meta=plan?planMetadata(plan,id):JSON.parse(await readFile(resolve(dir,"project.json"),"utf8"))
   if(standalone){const metadataDir=resolve(out,"input-projects",id);await mkdir(metadataDir,{recursive:true});await writeFile(resolve(metadataDir,"project.json"),JSON.stringify(meta,null,2))}
   if(meta.id!==id)throw new Error("Project id mismatch: "+id)
@@ -264,7 +265,15 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
     if(engine)circuit.add(<NativeDesign plan={engine.plan}/>)
     else {const Design=(await import(resolve(dir,"design.tsx"))).default;circuit.add(<Design />)}
     await circuit.renderUntilSettled()
-    const json=circuit.getCircuitJson()
+    let json=circuit.getCircuitJson()
+    if(plan?.manualProject&&engine){
+      const parts:Record<string,unknown>={}
+      for(const lcsc of new Set<string>(plan.manualProject.components.map((c:any)=>c.lcsc))){
+        const exact=await jlcpcbFootprintResolver(lcsc)
+        parts[lcsc]={pads:normalizeFootprint(exact.footprintCircuitJson)}
+      }
+      json=injectManualRoutes(json,plan.manualProject,{parts},engine.aliases)
+    }
     const namedNets=json.filter((x:any)=>x.type==="source_net").map((x:any)=>x.name)
     for(const expected of engine?.plan.nets??meta.expectedNets??[])if(!namedNets.includes(expected))throw new Error("Named net missing from Circuit JSON: "+expected)
     await writeFile(resolve(path,"circuit.json"),restore(JSON.stringify(json,null,2)));result.files.push("circuit.json")
