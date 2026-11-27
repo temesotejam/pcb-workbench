@@ -14,10 +14,12 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 
 ### Manual top-layer routing draft (development)
 
-- Graphical route mode: choose a real pad, click the board to place 0.25 mm snapped waypoints, then select a different pad on the same logical net. The selected width is fixed at the start; Escape or leaving the mode discards the uncommitted draft. Numeric entry remains available. No physical DRC or export support yet.
+- Candidate manual export: the build opts into complete explicit top-layer routing, disables automatic routing and injects exact Circuit JSON wire points only after checking source pin, PCB port and real pad center agreement. Partial nets, missing geometry or unexpected existing copper fail closed. Two new manual fixture boards exercise the existing KiCad pipeline. A serialized segment audit checks coordinates, width, top copper and net identity; independent DRC remains separate. CI verification pending; no production approval.
+
+- Graphical route mode: choose a real pad, click the board to place 0.25 mm snapped waypoints, then select a different pad on the same logical net. The selected width is fixed at the start; Escape or leaving the mode discards the uncommitted draft. Numeric entry remains available. Physical DRC is not performed in the editor; candidate build export requires independent verification.
 
 - Independent projects can store explicit top-layer routes with two same-net pad references, width and optional model-mm waypoints. The editor renders available exact-pad endpoints as orange polylines; deletion is supported. Legacy schema-v1 files without routes remain valid. Attached component movement and endpoint reassignment/deletion are blocked until the route is removed.
-- This is a route editing draft, not physical DRC: shorts, clearance, pad overlap and complete connectivity are not verified. The existing converter deliberately refuses any nonempty manual route collection rather than silently replacing it with autorouting. Review only; no fabrication of manual routes yet.
+- This is a route editing draft, not physical DRC: shorts, clearance, pad overlap and complete connectivity are not verified. The default adapter refuses manual routes unless explicitly enabled by the build; the candidate path never fills missing manual nets with autorouting. Review only until independent verification.
 
 ### Graphical pin connection (development)
 

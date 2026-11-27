@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "name": "Independent parallel RC — explicit manual routing",
+  "board": {
+    "width": 20,
+    "height": 15
+  },
+  "components": [
+    {
+      "ref": "R1",
+      "lcsc": "C17414",
+      "schematic": {
+        "x": -5,
+        "y": 0,
+        "rotation": 0
+      },
+      "pcb": {
+        "x": 0,
+        "y": -4,
+        "rotation": 0
+      }
+    },
+    {
+      "ref": "C1",
+      "lcsc": "C14663",
+      "schematic": {
+        "x": 5,
+        "y": 0,
+        "rotation": 0
+      },
+      "pcb": {
+        "x": 0,
+        "y": 4,
+        "rotation": 0
+      }
+    }
+  ],
+  "nets": [
+    {
+      "name": "SIGNAL",
+      "pins": [
+        {
+          "ref": "R1",
+          "pin": "1"
+        },
+        {
+          "ref": "C1",
+          "pin": "1"
+        }
+      ]
+    },
+    {
+      "name": "GND",
+      "pins": [
+        {
+          "ref": "R1",
+          "pin": "2"
+        },
+        {
+          "ref": "C1",
+          "pin": "2"
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "id": "T1",
+      "net": "SIGNAL",
+      "layer": "top",
+      "width": 0.25,
+      "from": {
+        "ref": "R1",
+        "pin": "1"
+      },
+      "to": {
+        "ref": "C1",
+        "pin": "1"
+      },
+      "waypoints": []
+    },
+    {
+      "id": "T2",
+      "net": "GND",
+      "layer": "top",
+      "width": 0.25,
+      "from": {
+        "ref": "R1",
+        "pin": "2"
+      },
+      "to": {
+        "ref": "C1",
+        "pin": "2"
+      },
+      "waypoints": []
+    }
+  ]
+}

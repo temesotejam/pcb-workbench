@@ -1,10 +1,10 @@
 import {validateProject,inspectProject} from "../site/project-model.js";
 
 // Whitelist the fields consumed by the renderer; never execute imported text.
-export function projectToCircuitPlan(project,catalog){
+export function projectToCircuitPlan(project,catalog,{allowManual=false}={}){
   validateProject(project,catalog);
-  if(project.routes?.length)throw new Error("Manual PCB routes cannot yet be exported; refusing to substitute autorouting");
-  const issues=inspectProject(project,catalog).issues;
+  if(project.routes?.length&&!allowManual)throw new Error("Manual PCB routes cannot yet be exported; refusing to substitute autorouting");
+  const issues=inspectProject(project.routes?.length?{...project,routes:[]}:project,catalog).issues;
   if(issues.length)throw new Error("Logical design incomplete: "+issues.join("; "));
   return {
     name:project.name,
@@ -13,6 +13,7 @@ export function projectToCircuitPlan(project,catalog){
     placements:project.components.map(c=>({name:c.ref,lcsc:c.lcsc,pcbX:c.pcb.x,pcbY:c.pcb.y,pcbRotation:c.pcb.rotation,schX:c.schematic.x,schY:c.schematic.y,schRotation:c.schematic.rotation})),
     nets:project.nets.map(n=>n.name),
     traces:project.nets.flatMap(n=>n.pins.map(pin=>({from:"."+pin.ref+" > .pin"+pin.pin,to:"net."+n.name}))),
+    ...(project.routes?.length?{manualProject:structuredClone(project)}:{}),
     orderReady:false
   };
 }
