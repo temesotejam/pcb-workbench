@@ -15,6 +15,7 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 ### Independent browser design (early model editor)
 
 - [New project editor](https://temesotejam.github.io/pcb-workbench/editor.html): create a blank project, add registered resistor/capacitor parts, assign logical nets and pins, edit schematic/PCB center coordinates, and save or load schema-v1 JSON. Browser local storage is a convenience; download JSON backups.
+- Graphical placement preview: drag resistor/capacitor symbols or nominal PCB bodies, use arrow keys/R for placement/rotation, and synchronize edits with the validated JSON model. PCB ratlines connect component centers only; exact pads and physical routes are not drawn. No manufacturing approval.
 - No EasyEDA or Bridge is required for this editor. The browser still does not directly run the conversion engine. A separate Node/Bun build path accepts exported JSON, uses exact registered footprint identities and generates review-only previews and KiCad candidates. Physical routing and independent ERC/DRC for each design must be verified; no production approval. NUCLEO is only an example.
 
 ### Independent JSON conversion (development)
