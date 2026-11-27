@@ -1,5 +1,6 @@
 import {createProject,validateProject,applyEdit,inspectProject} from "./project-model.js";
 import {attachGraphicEditor} from "./editor-graphics.js";
+import {routePoints,parseWaypoints} from "./route-geometry.js";
 const $=id=>document.getElementById(id);
 const key="pcb-workbench.native-project.v1";
 let catalog,project,footprints;
@@ -42,11 +43,41 @@ function render(){
   }
   const nets=table($("nets"),["ネット","接続ピン","操作"]);
   for(const n of project.nets){const row=el("tr",null,nets);el("td",n.name,row);el("td",n.pins.map(p=>p.ref+":"+p.pin).join(", ")||"未接続",row);button(el("td",null,row),"削除",()=>action({type:"remove-net",name:n.name}))}
+  renderRoutes();
   renderSchematic(project,catalog);renderPcb(project,catalog,footprints);
   const missing=project.components.filter(c=>footprints?.parts?.[c.lcsc]?.pads?.length!==2).map(c=>c.ref);
   $("footprint-status").textContent=missing.length?"実パッド未取得: "+missing.join(", ")+"。関連する接続線は表示しません。":"登録部品の取得済み実パッドを表示（製造承認なし）。";
   const report=inspectProject(project,catalog);$("diagnostics").textContent=report.issues.length?report.issues.join("\n"):"論理検査の指摘なし（製造可否は未確認）";
 }
+function renderRoutes(){
+  const selects=[$("route-from"),$("route-to")];
+  for(const select of selects){
+    select.replaceChildren();option(select,"","選択");
+    for(const net of project.nets)for(const pin of net.pins){
+      const c=project.components.find(c=>c.ref===pin.ref);
+      if(footprints?.parts?.[c.lcsc]?.pads?.some(p=>p.pin===pin.pin))option(select,pin.ref+":"+pin.pin,pin.ref+":"+pin.pin+" / "+net.name);
+    }
+  }
+  const rows=table($("routes"),["ID / Net","端点","幅 mm","経由点","状態","操作"]);
+  for(const route of project.routes??[]){
+    const row=el("tr",null,rows);
+    el("td",route.id+" / "+route.net,row);
+    el("td",route.from.ref+":"+route.from.pin+" → "+route.to.ref+":"+route.to.pin,row);
+    el("td",String(route.width),row);el("td",route.waypoints.map(p=>p.x+","+p.y).join(" / ")||"直線",row);
+    let note="仮配線・DRC未実施";
+    try{routePoints(project,footprints,route)}catch(e){note="表示不可: "+e.message}
+    el("td",note,row);button(el("td",null,row),"削除",()=>action({type:"remove-route",id:route.id}));
+  }
+}
+$("route-form").onsubmit=e=>{
+  e.preventDefault();
+  try{
+    const pin=id=>{const [ref,pin]=$(id).value.split(":");return {ref,pin}};
+    const next=applyEdit(project,{type:"add-route",from:pin("route-from"),to:pin("route-to"),width:$("route-width").valueAsNumber,waypoints:parseWaypoints($("route-points").value)},catalog);
+    routePoints(next,footprints,next.routes.at(-1));
+    setProject(next,"仮配線を追加しました（製造出力不可）");$("route-points").value="";
+  }catch(err){status(err.message)}
+};
 try{
   const response=await fetch("catalog.json");if(!response.ok)throw new Error("Catalog HTTP "+response.status);catalog=await response.json();
   try{const res=await fetch("footprint-preview.json");if(!res.ok)throw new Error("HTTP "+res.status);const data=await res.json();if(data.version===1&&data.parts)footprints=data}catch{/* editor stays usable without geometry */}

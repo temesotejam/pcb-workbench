@@ -1,5 +1,6 @@
 import {modelToSvg,moveFromDrag,fitView,logicalLinks,schematicPinPoint,schematicLinks} from "./editor-geometry.js";
 import {padPoint,pcbPadLinks} from "./footprint-preview.js";
+import {routePoints} from "./route-geometry.js";
 const NS="http://www.w3.org/2000/svg";
 function node(tag,attrs,parent,content){
   const e=document.createElementNS(NS,tag);
@@ -142,6 +143,13 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{}){
     if(view==="pcb"){
       const {width,height}=project.board;
       node("rect",{x:-width/2,y:-height/2,width,height,fill:"#16332e",stroke:"#61d1b3","stroke-width":.16},svg);
+      for(const route of project.routes??[]){
+        try{
+          const pts=routePoints(project,footprints,route).map(modelToSvg);
+          const path=node("polyline",{points:pts.map(p=>p.x+","+p.y).join(" "),fill:"none",stroke:"#db8251","stroke-width":route.width,"stroke-linecap":"round","stroke-linejoin":"round","pointer-events":"none"},svg);
+          node("title",{},path,route.id+" / "+route.net+" / draft top copper");
+        }catch{/* unavailable route is reported in the route table */}
+      }
       const byRef=new Map(project.components.map(c=>[c.ref,c]));
       for(const link of pcbPadLinks(project,footprints)){
         const a=padPoint(byRef.get(link.from.ref).pcb,link.from.pad),b=padPoint(byRef.get(link.to.ref).pcb,link.to.pad);
