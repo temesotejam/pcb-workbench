@@ -12,6 +12,11 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
+### Manual top-layer routing draft (development)
+
+- Independent projects can store explicit top-layer routes with two same-net pad references, width and optional model-mm waypoints. The editor renders available exact-pad endpoints as orange polylines; deletion is supported. Legacy schema-v1 files without routes remain valid. Attached component movement and endpoint reassignment/deletion are blocked until the route is removed.
+- This is a route editing draft, not physical DRC: shorts, clearance, pad overlap and complete connectivity are not verified. The existing converter deliberately refuses any nonempty manual route collection rather than silently replacing it with autorouting. Review only; no fabrication of manual routes yet.
+
 ### Graphical pin connection (development)
 
 - Schematic pins can be selected in pairs to create or extend logical nets. Distinct existing nets require explicit editing; no silent merging. Dashed lines depict logical connections, not physical PCB traces. The pad preview candidate uses exact registered LCSC footprints during build: supported two-pin top SMD pads are rendered with their imported dimensions, and unsupported/missing geometry is marked unavailable. No physical routing or manufacturing approval.

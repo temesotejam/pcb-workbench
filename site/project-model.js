@@ -32,6 +32,29 @@ function validateProject(p,catalog){
       check(!pins.has(key),"Pin is assigned more than once: "+key);pins.add(key);
     }
   }
+  if(p.routes!==undefined){
+    check(Array.isArray(p.routes)&&p.routes.length<=2000,"Invalid route collection");
+    const ids=new Set(),pairs=new Set();
+    for(const route of p.routes){
+      check(isObject(route)&&/^T[1-9][0-9]{0,5}$/.test(route.id)&&!ids.has(route.id),"Invalid or duplicate route ID");
+      ids.add(route.id);
+      check(route.layer==="top"&&typeof route.width==="number"&&Number.isFinite(route.width)&&route.width>=.05&&route.width<=5,"Invalid route layer or width");
+      const n=p.nets.find(n=>n.name===route.net);
+      check(n,"Route references an unknown net; delete the route first");
+      const endpoint=pin=>isObject(pin)&&n.pins.some(q=>q.ref===pin.ref&&q.pin===pin.pin);
+      check(endpoint(route.from)&&endpoint(route.to),"Route endpoint is not on its net; delete the route first");
+      const a=route.from.ref+":"+route.from.pin,b=route.to.ref+":"+route.to.pin;
+      check(a!==b,"Route needs two different pads");
+      const pair=[a,b].sort().join("|");
+      check(!pairs.has(pair),"Duplicate pad pair");pairs.add(pair);
+      check(Array.isArray(route.waypoints)&&route.waypoints.length<=100,"Invalid route waypoints");
+      let prev=null;
+      for(const pt of route.waypoints){
+        check(isObject(pt)&&coord(pt.x)&&coord(pt.y)&&Math.abs(pt.x)+route.width/2<=p.board.width/2&&Math.abs(pt.y)+route.width/2<=p.board.height/2,"Route waypoint outside board");
+        check(!prev||prev.x!==pt.x||prev.y!==pt.y,"Repeated route waypoint");prev=pt;
+      }
+    }
+  }
   return p;
 }
 
@@ -59,8 +82,24 @@ function applyEdit(project,edit,catalog){
       for(const n of p.nets)n.pins=n.pins.filter(pin=>pin.ref!==edit.ref);break;
     case "place":{
       const c=component();check(["schematic","pcb"].includes(edit.view),"Invalid view");
+      const old=c[edit.view];
+      if(edit.view==="pcb"&&(old.x!==edit.x||old.y!==edit.y||old.rotation!==edit.rotation))
+        check(!(p.routes??[]).some(t=>t.from.ref===c.ref||t.to.ref===c.ref),"Delete attached routes before moving this PCB component");
       c[edit.view]={x:edit.x,y:edit.y,rotation:edit.rotation};break;
     }
+    case "add-route":{
+      const routes=p.routes??(p.routes=[]);
+      let i=1;while(routes.some(t=>t.id==="T"+i))i++;
+      const pin=q=>({ref:q?.ref,pin:q?.pin});
+      const from=pin(edit.from),to=pin(edit.to);
+      const n=p.nets.find(n=>[from,to].every(q=>n.pins.some(p=>p.ref===q.ref&&p.pin===q.pin)));
+      check(n,"Route pads must be on the same logical net");
+      check(Array.isArray(edit.waypoints),"Invalid route waypoints");
+      routes.push({id:"T"+i,net:n.name,layer:"top",width:edit.width,from,to,waypoints:edit.waypoints.map(q=>({x:q?.x,y:q?.y}))});break;
+    }
+    case "remove-route":
+      check((p.routes??[]).some(t=>t.id===edit.id),"Unknown route");
+      p.routes=p.routes.filter(t=>t.id!==edit.id);break;
     case "add-net":p.nets.push({name:edit.name,pins:[]});break;
     case "remove-net":net();p.nets=p.nets.filter(n=>n.name!==edit.name);break;
     case "connect-pins":{
@@ -98,6 +137,7 @@ function inspectProject(p,catalog){
     if(Math.abs(c.pcb.x)>p.board.width/2||Math.abs(c.pcb.y)>p.board.height/2)issues.push("Component center outside board: "+c.ref);
   }
   for(const n of p.nets)if(n.pins.length<2)issues.push("Net has fewer than two pins: "+n.name);
+  if(p.routes?.length)issues.push("Manual routes require independent physical connectivity and clearance verification; conversion is not supported yet");
   return {issues,orderReady:false,scope:"logical connectivity and center bounds only; no ERC/DRC or footprint verification"};
 }
 
