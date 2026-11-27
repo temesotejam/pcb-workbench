@@ -288,8 +288,13 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
       const labels=prepared.schematicFiles.map(f=>restore(f.content)).join("\n")
       const pcbText=restore(prepared.pcbText)
       if(plan.manualProject){
-        if(sexprBlocks(pcbText,"(via ").length||sexprBlocks(pcbText,"(zone ").length)throw new Error("Unexpected KiCad vias or zones in manual top-layer mode")
-        const audit=verifyKicadManualSegments(pcbText,sexprBlocks(pcbText,"(segment").map(b=>b.text),json,plan.manualProject)
+        // KiCad's serializer may place a newline immediately after the atom.
+        // Match the exact token followed by any whitespace, not just a space.
+        const blocks=(atom:string)=>sexprBlocks(pcbText,"("+atom).filter(b=>new RegExp("^\\("+atom+"(?:\\s|\\))").test(b.text)).map(b=>b.text)
+        if(blocks("zone").length||blocks("arc").length)throw new Error("Unexpected KiCad zones or arc tracks in manual mode")
+        const viaBlocks=blocks("via")
+        console.log(id,"serialized via count",viaBlocks.length,"route-defined via count",json.filter((e:any)=>e.type==="pcb_trace").flatMap((e:any)=>e.route).filter((p:any)=>p.route_type==="via").length)
+        const audit=verifyKicadManualSegments(pcbText,blocks("segment"),json,plan.manualProject,viaBlocks)
         console.log(id,"serialized manual route parity",JSON.stringify(audit))
         await writeFile(resolve(path,"manual-route-parity.json"),JSON.stringify(audit,null,2));result.files.push("manual-route-parity.json")
       }

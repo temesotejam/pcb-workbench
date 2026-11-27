@@ -74,7 +74,7 @@ function renderRoutes(){
     el("td",route.from.ref+":"+route.from.pin+" → "+route.to.ref+":"+route.to.pin,row);
     el("td",String(route.width),row);el("td",route.waypoints.map(p=>[p.x,p.y,...(p.via?[p.via.diameter,p.via.drill]:[])].join(",")).join(" / ")||"直線",row);
     let note="仮配線・DRC未実施";
-    try{routeCopper(project,footprints,route);if(route.waypoints.some(p=>p.via))note="両面仮配線・製造変換未対応"}catch(e){note="表示不可: "+e.message}
+    try{routeCopper(project,footprints,route);if(route.waypoints.some(p=>p.via))note="両面仮配線・独立製造検証が必要"}catch(e){note="表示不可: "+e.message}
     el("td",note,row);button(el("td",null,row),"削除",()=>action({type:"remove-route",id:route.id}));
   }
 }

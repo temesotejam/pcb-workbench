@@ -145,7 +145,7 @@ function inspectProject(p,catalog){
   }
   for(const n of p.nets)if(n.pins.length<2)issues.push("Net has fewer than two pins: "+n.name);
   if(p.routes?.length)issues.push("Manual routes require independent physical connectivity and clearance verification");
-  if(p.routes?.some(t=>t.waypoints.some(q=>q.via!==undefined)))issues.push("Two-layer routes are draft only; via manufacturing conversion is not supported yet");
+  if(p.routes?.some(t=>t.waypoints.some(q=>q.via!==undefined)))issues.push("Two-layer routes require serialized via parity and independent KiCad verification");
   return {issues,orderReady:false,scope:"logical connectivity and center bounds only; no ERC/DRC or footprint verification"};
 }
 
