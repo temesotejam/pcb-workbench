@@ -11,6 +11,11 @@ import shutil
 import sys
 import zipfile
 
+if __package__:
+    from .drill_audit import audit_manual_via_drills
+else:
+    from drill_audit import audit_manual_via_drills
+
 def csv_write(path, fields, rows):
     with path.open("w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
@@ -76,6 +81,7 @@ def process(root, meta_path):
     for name in ("erc.json", "drc.json", "validation.json"):
         (dest/name).unlink(missing_ok=True)
     summary.pop("draftFiles", None)
+    summary.pop("drillParity", None)
     summary["files"] = [n for n in summary["files"] if n not in ("erc.json", "drc.json", "validation.json")]
     warnings = []
 
@@ -86,7 +92,7 @@ def process(root, meta_path):
             summary.pop("draftFiles", None)
         blockers.append("Production release gate disabled; manual JLCPCB preview and engineering review not implemented.")
         summary.update(status="draft" if ok else "blocked", blockers=blockers, orderReady=False)
-        validation_text = json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False},indent=2)
+        validation_text = json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False, "drillParity":summary.get("drillParity")},indent=2)
         (dest/"validation.json").write_text(validation_text)
         if ok:
             (draft/"validation.json").write_text(validation_text)
@@ -192,6 +198,8 @@ def process(root, meta_path):
             raise ValueError("No Gerber copper files")
         if not any(p.suffix.lower()==".gko" or "edge_cuts" in p.name.lower() or "edge.cuts" in p.name.lower() for p in plotted):
             raise ValueError("No identifiable board-outline output")
+        if "expectedViaDrills" in summary:
+            summary["drillParity"] = audit_manual_via_drills(plotted, summary["expectedViaDrills"])
         with (draft/"positions.csv").open(encoding="utf-8-sig",newline="") as f:
             bom,cpl,issues=assembly_rows(summary["parts"],list(csv.DictReader(f)))
         blockers.extend(issues)
@@ -205,7 +213,7 @@ def process(root, meta_path):
                 z.write(p,p.name)
         (draft/"DO_NOT_ORDER.txt").write_text("DRAFT ONLY. No verified component selection or release approval.\n")
         summary["draftFiles"]=["draft/Gerber.zip","draft/BOM.csv","draft/CPL.csv","draft/DO_NOT_ORDER.txt"]
-    except (ValueError,KeyError,OSError) as e:
+    except (ValueError,KeyError,OSError,ArithmeticError,TypeError) as e:
         blockers.append(str(e))
         ok = False
     return finish(ok)

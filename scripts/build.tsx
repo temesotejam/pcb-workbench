@@ -256,7 +256,7 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
   if(meta.id!==id)throw new Error("Project id mismatch: "+id)
   const path=resolve(out,"projects",id)
   await mkdir(path,{recursive:true})
-  const result={id,name:meta.name,revision:meta.revision,purpose:meta.purpose,status:"blocked",parts:[] as ReturnType<typeof resolveParts>,errors:[] as string[],files:[] as string[]}
+  const result={id,name:meta.name,revision:meta.revision,purpose:meta.purpose,status:"blocked",...(plan?.manualProject?{expectedViaDrills:plan.manualProject.routes.flatMap((r:any)=>r.waypoints.filter((p:any)=>p.via).map((p:any)=>({x:p.x,y:p.y,drill:p.via.drill})))}:{}),parts:[] as ReturnType<typeof resolveParts>,errors:[] as string[],files:[] as string[]}
   try{
     result.parts=resolveParts(meta.parts)
     const circuit=new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})

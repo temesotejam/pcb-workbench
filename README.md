@@ -12,7 +12,9 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
-### Two-layer route draft (development)
+### Two-layer routing and drill parity (development)
+
+- PR #11 graphical via insertion merged at f056c1f after [build](https://github.com/temesotejam/pcb-workbench/actions/runs/46071284995) and [manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46071284971) passed. New candidate audits the actual KiCad absolute metric decimal Excellon drill file against the manual model (1 µm resolution), including plating classification, count, coordinates and diameters; mismatch or unsupported syntax blocks the entire draft export. This is restricted to current all-top-SMD manual boards with through-vias, not arbitrary hole or slot formats. CI pending; real browser interaction remains outstanding.
 
 - PR #10 passed [build](https://github.com/temesotejam/pcb-workbench/actions/runs/46064904770) and [independent KiCad manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46064904674) and merged at f3634d8. The crossed two-layer fixture passed with exactly five serialized copper segments and two through-vias, alongside the other five fixture boards. Draft only; independent Excellon drill-file parity is still outstanding.
 - Graphical via candidate: Shift-click the board or select the one-shot via option, with explicit outer and hole diameters. The temporary route changes color by layer, shows via rings and requires return to top before committing to an SMD pad. Backspace removes the last temporary waypoint. Browser interaction and CI remain to be verified.
