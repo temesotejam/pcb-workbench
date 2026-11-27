@@ -4,3 +4,5 @@ dist/
 site/handoff.js
 __pycache__/
 *.pyc
+
+dist-native/

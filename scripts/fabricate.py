@@ -167,6 +167,15 @@ def process(root, meta_path):
 
 if __name__ == "__main__":
     dist = pathlib.Path(sys.argv[1] if len(sys.argv)>1 else "dist").resolve()
-    projects = pathlib.Path("projects")
-    outcomes = [process(dist,p) for p in sorted(projects.glob("*/project.json"))]
+    projects = pathlib.Path(sys.argv[2] if len(sys.argv)>2 else "projects")
+    outcomes = []
+    for p in sorted(projects.glob("*/project.json")):
+        ok = process(dist,p)
+        outcomes.append(ok)
+        meta = json.loads(p.read_text())
+        report = dist / "projects" / meta["id"] / "validation.json"
+        print(f"{meta['id']}: {'PASS (draft only)' if ok else 'FAIL'}", flush=True)
+        if not ok and report.is_file():
+            for blocker in json.loads(report.read_text()).get("blockers", []):
+                print("  " + blocker, flush=True)
     sys.exit(0 if outcomes and all(outcomes) else 1)

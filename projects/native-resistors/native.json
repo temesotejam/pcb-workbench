@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "name": "Independent resistor pair",
+  "board": {
+    "width": 20,
+    "height": 15
+  },
+  "components": [
+    {
+      "ref": "R1",
+      "lcsc": "C17414",
+      "schematic": {
+        "x": -5,
+        "y": 0,
+        "rotation": 0
+      },
+      "pcb": {
+        "x": -4,
+        "y": 0,
+        "rotation": 0
+      }
+    },
+    {
+      "ref": "R2",
+      "lcsc": "C17414",
+      "schematic": {
+        "x": 5,
+        "y": 0,
+        "rotation": 0
+      },
+      "pcb": {
+        "x": 4,
+        "y": 0,
+        "rotation": 0
+      }
+    }
+  ],
+  "nets": [
+    {
+      "name": "SUPPLY",
+      "pins": [
+        {
+          "ref": "R1",
+          "pin": "1"
+        },
+        {
+          "ref": "R2",
+          "pin": "1"
+        }
+      ]
+    },
+    {
+      "name": "RETURN",
+      "pins": [
+        {
+          "ref": "R1",
+          "pin": "2"
+        },
+        {
+          "ref": "R2",
+          "pin": "2"
+        }
+      ]
+    }
+  ]
+}
