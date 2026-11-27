@@ -1,6 +1,6 @@
 import {modelToSvg,moveFromDrag,fitView,logicalLinks,schematicPinPoint,schematicLinks} from "./editor-geometry.js";
 import {padPoint,pcbPadLinks} from "./footprint-preview.js";
-import {routeCopper,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint} from "./route-geometry.js";
+import {routeCopper,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint,routeDraftCopper} from "./route-geometry.js";
 const NS="http://www.w3.org/2000/svg";
 function node(tag,attrs,parent,content){
   const e=document.createElementNS(NS,tag);
@@ -55,21 +55,36 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{},routing=null
   const routeMode=()=>view==="pcb"&&Boolean(routing?.enabled());
   function clearDraft(){
     draft=null;overlay?.remove();overlay=null;
+    routing?.clearVia?.();
   }
   function drawDraft(cursor){
     overlay?.remove();overlay=null;
     if(!draft)return;
     overlay=node("g",{"pointer-events":"none","data-route-draft":"true"},svg);
-    const pts=[draft.start,...draft.waypoints,...(cursor?[cursor]:[])].map(modelToSvg);
-    node("polyline",{points:pts.map(p=>p.x+","+p.y).join(" "),stroke:"#ffd166","stroke-width":draft.width,"stroke-dasharray":".5 .25",fill:"none","stroke-linejoin":"round","stroke-linecap":"round"},overlay);
-    for(const p of pts.slice(0,cursor?-1:undefined))node("circle",{cx:p.x,cy:p.y,r:Math.max(.18,draft.width/2),fill:"#fff0aa"},overlay);
+    const copper=routeDraftCopper(draft,cursor);
+    for(const s of copper.segments){
+      const a=modelToSvg(s.from),b=modelToSvg(s.to);
+      node("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:s.layer==="top"?"#ffd166":"#75a7f5","stroke-width":s.width,"stroke-dasharray":".5 .25","stroke-linecap":"round"},overlay);
+    }
+    for(const p of [draft.start,...draft.waypoints].filter(p=>!p.via)){
+      const q=modelToSvg(p);node("circle",{cx:q.x,cy:q.y,r:Math.max(.18,draft.width/2),fill:"#fff0aa"},overlay);
+    }
+    for(const via of copper.vias){
+      const q=modelToSvg(via);
+      node("circle",{cx:q.x,cy:q.y,r:via.diameter/2,fill:"#d3a552",stroke:"#fff0aa","stroke-width":.05},overlay);
+      node("circle",{cx:q.x,cy:q.y,r:via.drill/2,fill:"#16332e"},overlay);
+    }
+  }
+  function draftStatus(){
+    const {layer}=routeDraftCopper(draft);
+    onStatus("経由点 "+draft.waypoints.length+" 個 · "+(layer==="top"?"表面 F.Cu（同一ネットのパッドで確定）":"裏面 B.Cu（ビアで表面へ戻ってから確定）")+" · Backspaceで最後の点を取消");
   }
   function choosePad(element){
     const pin={ref:element.closest("[data-ref]").dataset.ref,pin:element.dataset.pad};
     try{
       if(!draft){
         draft=beginRouteDraft(project,footprintData,pin,routing.width());drawDraft();
-        onStatus(pin.ref+":"+pin.pin+" / "+draft.net+" — 基板をクリックして経由点、同一ネットのパッドで確定（Escで解除）");
+        onStatus(pin.ref+":"+pin.pin+" / "+draft.net+" — 表面 F.Cu。Shift+クリックまたはビア指定で層を切替（Escで解除）");
       }else{
         const edit=finishRouteDraft(project,footprintData,draft,pin);
         if(routing.commit(edit))clearDraft();
@@ -148,8 +163,13 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{},routing=null
       if(draft&&e.target.hasAttribute?.("data-board")){
         svg.focus();
         const p=point(e);if(!p)return;
-        try{draft=appendRouteWaypoint(project,draft,p);drawDraft();onStatus("経由点 "+draft.waypoints.length+" 個（0.25 mmスナップ）。同一ネットのパッドで確定");}
-        catch(err){onStatus(err.message)}
+        try{
+          const via=(e.shiftKey||routing.viaEnabled?.())?routing.viaDimensions?.():undefined;
+          draft=appendRouteWaypoint(project,draft,p,via);
+          if(via!==undefined)routing.clearVia?.();
+          drawDraft();
+          draftStatus();
+        }catch(err){onStatus(err.message)}
       }
       return;
     }
@@ -159,6 +179,11 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{},routing=null
   svg.addEventListener("keydown",e=>{
     if(routeMode()){
       if(e.key==="Escape"){e.preventDefault();clearDraft();onStatus("配線選択を解除しました");return}
+      if(e.key==="Backspace"&&draft){
+        e.preventDefault();
+        draft={...draft,waypoints:draft.waypoints.slice(0,-1)};
+        routing.clearVia?.();drawDraft();draftStatus();return;
+      }
       const pad=e.target.closest?.("[data-pad]");
       if(pad&&(e.key==="Enter"||e.key===" ")){e.preventDefault();choosePad(pad)}
       return;

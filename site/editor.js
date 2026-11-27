@@ -20,6 +20,9 @@ const renderSchematic=attachGraphicEditor($("schematic-view"),"schematic",action
 const renderPcb=attachGraphicEditor($("pcb-view"),"pcb",action,status,{
   enabled:()=>$("route-mode").checked,
   width:()=>$("route-width").valueAsNumber,
+  viaEnabled:()=>$("route-via-next").checked,
+  viaDimensions:()=>({diameter:$("route-via-diameter").valueAsNumber,drill:$("route-via-drill").valueAsNumber}),
+  clearVia:()=>{$("route-via-next").checked=false},
   commit:addRoute
 });
 $("route-mode").onchange=()=>{
