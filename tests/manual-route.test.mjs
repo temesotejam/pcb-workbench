@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {applyEdit,validateProject,inspectProject} from "../site/project-model.js";
 import {projectToCircuitPlan} from "../scripts/project-adapter.js";
-import {routePoints,parseWaypoints} from "../site/route-geometry.js";
+import {routePoints,parseWaypoints,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint} from "../site/route-geometry.js";
 const read=p=>JSON.parse(readFileSync(new URL(p,import.meta.url),"utf8"));
 const catalog=read("../library/catalog.json");
 const fixture=()=>read("../projects/native-resistors/native.json");
@@ -44,4 +44,35 @@ test("geometry uses actual supplied pad centers, positive Y up, and rejects miss
   assert.throws(()=>routePoints({...q,board:{width:1,height:1}},synthetic,t),/outside board/);
   assert.deepEqual(parseWaypoints("0,4\n 2,-3"),[{x:0,y:4},{x:2,y:-3}]);
   assert.throws(()=>parseWaypoints("1,"));assert.throws(()=>parseWaypoints("1,NaN"));
+});
+
+const syntheticGeometry=p=>({parts:Object.fromEntries(p.components.map(c=>[c.lcsc,{pads:[{pin:"1",x:-.5,y:.25},{pin:"2",x:.5,y:.25}]}]))});
+test("graphical draft adds snapped waypoints without mutating project, then commits exact route",()=>{
+  const p=fixture(),f=syntheticGeometry(p),n=p.nets[0],initial=JSON.stringify(p);
+  const a=beginRouteDraft(p,f,n.pins[0],.25);
+  const b=appendRouteWaypoint(p,a,{x:.13,y:-4.12});
+  assert.deepEqual(a.waypoints,[]);
+  assert.deepEqual(b.waypoints,[{x:.25,y:4}]);
+  assert.deepEqual(snapRoutePoint({x:-.14,y:2.13}),{x:-.25,y:-2.25});
+  const q=edit(p,finishRouteDraft(p,f,b,n.pins[1]));
+  assert.equal(q.routes[0].width,.25);
+  assert.deepEqual(q.routes[0].waypoints,b.waypoints);
+  assert.equal(JSON.stringify(p),initial);
+  assert.deepEqual(routePoints(q,f,q.routes[0])[0],a.start);
+});
+test("graphical route rejects unassigned, missing, wrong-net and same pad endpoints",()=>{
+  const p=fixture(),f=syntheticGeometry(p),n=p.nets[0],from=n.pins[0],a=beginRouteDraft(p,f,from,.25);
+  assert.throws(()=>beginRouteDraft(p,{},from,.25),/Exact pad unavailable/);
+  assert.throws(()=>beginRouteDraft(p,f,{ref:"UNKNOWN",pin:"1"},.25),/not assigned/);
+  assert.throws(()=>beginRouteDraft(p,f,from,0),/width/);
+  assert.throws(()=>finishRouteDraft(p,f,a,p.nets[1].pins[0]),/same logical net/);
+  assert.throws(()=>finishRouteDraft(p,f,a,from),/different pads/);
+});
+test("graphical draft rejects repeated and out-of-board points without corrupting draft",()=>{
+  const p=fixture(),f=syntheticGeometry(p),a=beginRouteDraft(p,f,p.nets[0].pins[0],.25);
+  const b=appendRouteWaypoint(p,a,{x:0,y:-4});
+  assert.throws(()=>appendRouteWaypoint(p,b,{x:0,y:-4}),/Repeated/);
+  assert.throws(()=>appendRouteWaypoint(p,b,{x:1000,y:0}),/outside board/);
+  assert.deepEqual(b.waypoints,[{x:0,y:4}]);
+  assert.throws(()=>appendRouteWaypoint(p,{...b,waypoints:Array.from({length:100},(_,i)=>({x:i,y:4}))},{x:0,y:0}),/Too many/);
 });
