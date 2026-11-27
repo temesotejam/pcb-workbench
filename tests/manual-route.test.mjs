@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {applyEdit,validateProject,inspectProject} from "../site/project-model.js";
 import {projectToCircuitPlan} from "../scripts/project-adapter.js";
-import {routePoints,parseWaypoints,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint} from "../site/route-geometry.js";
+import {routePoints,routeCopper,parseWaypoints,beginRouteDraft,appendRouteWaypoint,finishRouteDraft,snapRoutePoint} from "../site/route-geometry.js";
 const read=p=>JSON.parse(readFileSync(new URL(p,import.meta.url),"utf8"));
 const catalog=read("../library/catalog.json");
 const fixture=()=>read("../projects/native-resistors/native.json");
@@ -142,4 +142,31 @@ test("serialized KiCad parity rejects changed waypoint, width, net, layer or ext
     blocks[0].replace('"F.Cu"','"B.Cu"')
   ])assert.throws(()=>verify([changed,...blocks.slice(1)]));
   assert.throws(()=>verify([...blocks,blocks[0]]),/parity mismatch/);
+});
+
+
+test("two-layer draft preserves via dimensions and alternates layers without losing legacy routes",()=>{
+  const p=fixture(),d=draft(p),via={diameter:.7,drill:.3};
+  const waypoints=parseWaypoints("0,-2,0.7,0.3\n0,0\n0,2,0.7,0.3");
+  const q=edit(p,{...d,waypoints});
+  assert.deepEqual(q.routes[0].waypoints,waypoints);
+  assert.deepEqual(validateProject(JSON.parse(JSON.stringify(q)),catalog),q);
+  const copper=routeCopper(q,syntheticGeometry(p),q.routes[0]);
+  assert.deepEqual(copper.segments.map(s=>s.layer),["top","bottom","bottom","top"]);
+  assert.deepEqual(copper.vias,[{x:0,y:-2,...via},{x:0,y:2,...via}]);
+  assert.throws(()=>projectToCircuitPlan(q,catalog,{allowManual:true}),/refusing to omit vias/);
+  assert.equal(inspectProject(q,catalog).orderReady,false);
+  assert.deepEqual(routeCopper(p,syntheticGeometry(p),d).segments.map(s=>s.layer),["top","top"]);
+});
+test("via draft rejects odd transitions, invalid holes/rings, board edge and malformed waypoint rows",()=>{
+  const p=fixture(),d=draft(p),via={diameter:.7,drill:.3},pts=[{x:0,y:-2,via},{x:0,y:2,via}];
+  assert.throws(()=>edit(p,{...d,waypoints:pts.slice(0,1)}),/even number/);
+  for(const bad of [{diameter:.3,drill:.3},{diameter:.7,drill:0},{diameter:.7,drill:NaN},{diameter:.2,drill:.1},null]){
+    assert.throws(()=>edit(p,{...d,waypoints:[{...pts[0],via:bad},pts[1]]}),/via/);
+  }
+  assert.throws(()=>edit(p,{...d,waypoints:[{...pts[0],x:p.board.width/2-.2},pts[1]]}),/Via outside board/);
+  assert.throws(()=>parseWaypoints("0,1,.7"),/Waypoint format/);
+  assert.throws(()=>parseWaypoints("0,1,.7,"),/Waypoint format/);
+  const q=edit(p,{...d,waypoints:pts});
+  assert.throws(()=>edit(q,{type:"board",width:.5,height:p.board.height}),/Board dimensions/);
 });

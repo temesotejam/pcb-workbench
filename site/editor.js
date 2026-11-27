@@ -1,6 +1,6 @@
 import {createProject,validateProject,applyEdit,inspectProject} from "./project-model.js";
 import {attachGraphicEditor} from "./editor-graphics.js";
-import {routePoints,parseWaypoints} from "./route-geometry.js";
+import {routeCopper,parseWaypoints} from "./route-geometry.js";
 const $=id=>document.getElementById(id);
 const key="pcb-workbench.native-project.v1";
 let catalog,project,footprints;
@@ -72,16 +72,16 @@ function renderRoutes(){
     const row=el("tr",null,rows);
     el("td",route.id+" / "+route.net,row);
     el("td",route.from.ref+":"+route.from.pin+" → "+route.to.ref+":"+route.to.pin,row);
-    el("td",String(route.width),row);el("td",route.waypoints.map(p=>p.x+","+p.y).join(" / ")||"直線",row);
+    el("td",String(route.width),row);el("td",route.waypoints.map(p=>[p.x,p.y,...(p.via?[p.via.diameter,p.via.drill]:[])].join(",")).join(" / ")||"直線",row);
     let note="仮配線・DRC未実施";
-    try{routePoints(project,footprints,route)}catch(e){note="表示不可: "+e.message}
+    try{routeCopper(project,footprints,route);if(route.waypoints.some(p=>p.via))note="両面仮配線・製造変換未対応"}catch(e){note="表示不可: "+e.message}
     el("td",note,row);button(el("td",null,row),"削除",()=>action({type:"remove-route",id:route.id}));
   }
 }
 function addRoute(edit){
   try{
     const next=applyEdit(project,edit,catalog);
-    routePoints(next,footprints,next.routes.at(-1));
+    routeCopper(next,footprints,next.routes.at(-1));
     setProject(next,"仮配線を追加しました（製造出力不可）");
     return true;
   }catch(err){status(err.message);return false}
