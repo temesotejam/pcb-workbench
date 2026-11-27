@@ -192,6 +192,7 @@ test("two-layer compilation and serialized parity preserve every segment and thr
   }
   const verify=(b=blocks,v=vias)=>verifyKicadManualSegments(header,b,out,p,v);
   assert.equal(verify().vias,2);
+  assert.equal(verify(blocks,vias.map(v=>v.replace('(via ','(via\n  '))).vias,2);
   assert.equal(verify().segments,6);
   assert.throws(()=>verify(blocks,[]),/via parity/);
   assert.throws(()=>verify(blocks,[...vias,vias[0]]),/via parity/);
