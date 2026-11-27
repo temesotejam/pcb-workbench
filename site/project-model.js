@@ -48,11 +48,18 @@ function validateProject(p,catalog){
       const pair=[a,b].sort().join("|");
       check(!pairs.has(pair),"Duplicate pad pair");pairs.add(pair);
       check(Array.isArray(route.waypoints)&&route.waypoints.length<=100,"Invalid route waypoints");
-      let prev=null;
+      let prev=null,transitions=0;
       for(const pt of route.waypoints){
         check(isObject(pt)&&coord(pt.x)&&coord(pt.y)&&Math.abs(pt.x)+route.width/2<=p.board.width/2&&Math.abs(pt.y)+route.width/2<=p.board.height/2,"Route waypoint outside board");
         check(!prev||prev.x!==pt.x||prev.y!==pt.y,"Repeated route waypoint");prev=pt;
+        if(pt.via!==undefined){
+          const v=pt.via;
+          check(isObject(v)&&Number.isFinite(v.diameter)&&Number.isFinite(v.drill)&&v.drill>=.1&&v.diameter<=5&&v.diameter>=route.width&&v.diameter-v.drill>=.1-1e-9,"Invalid through-via diameter, drill or annular ring");
+          check(Math.abs(pt.x)+v.diameter/2<=p.board.width/2&&Math.abs(pt.y)+v.diameter/2<=p.board.height/2,"Via outside board");
+          transitions++;
+        }
       }
+      check(transitions%2===0,"Top SMD endpoints require an even number of layer transitions");
     }
   }
   return p;
@@ -95,7 +102,7 @@ function applyEdit(project,edit,catalog){
       const n=p.nets.find(n=>[from,to].every(q=>n.pins.some(p=>p.ref===q.ref&&p.pin===q.pin)));
       check(n,"Route pads must be on the same logical net");
       check(Array.isArray(edit.waypoints),"Invalid route waypoints");
-      routes.push({id:"T"+i,net:n.name,layer:"top",width:edit.width,from,to,waypoints:edit.waypoints.map(q=>({x:q?.x,y:q?.y}))});break;
+      routes.push({id:"T"+i,net:n.name,layer:"top",width:edit.width,from,to,waypoints:edit.waypoints.map(q=>({x:q?.x,y:q?.y,...(q?.via!==undefined?{via:{diameter:q.via?.diameter,drill:q.via?.drill}}:{})}))});break;
     }
     case "remove-route":
       check((p.routes??[]).some(t=>t.id===edit.id),"Unknown route");
@@ -137,7 +144,8 @@ function inspectProject(p,catalog){
     if(Math.abs(c.pcb.x)>p.board.width/2||Math.abs(c.pcb.y)>p.board.height/2)issues.push("Component center outside board: "+c.ref);
   }
   for(const n of p.nets)if(n.pins.length<2)issues.push("Net has fewer than two pins: "+n.name);
-  if(p.routes?.length)issues.push("Manual routes require independent physical connectivity and clearance verification; conversion is not supported yet");
+  if(p.routes?.length)issues.push("Manual routes require independent physical connectivity and clearance verification");
+  if(p.routes?.some(t=>t.waypoints.some(q=>q.via!==undefined)))issues.push("Two-layer routes are draft only; via manufacturing conversion is not supported yet");
   return {issues,orderReady:false,scope:"logical connectivity and center bounds only; no ERC/DRC or footprint verification"};
 }
 
