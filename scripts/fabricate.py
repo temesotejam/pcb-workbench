@@ -167,6 +167,6 @@ def process(root, meta_path):
 
 if __name__ == "__main__":
     dist = pathlib.Path(sys.argv[1] if len(sys.argv)>1 else "dist").resolve()
-    projects = pathlib.Path("projects")
+    projects = pathlib.Path(sys.argv[2] if len(sys.argv)>2 else "projects")
     outcomes = [process(dist,p) for p in sorted(projects.glob("*/project.json"))]
     sys.exit(0 if outcomes and all(outcomes) else 1)

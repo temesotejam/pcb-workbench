@@ -5,6 +5,9 @@ import { cp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises"
 import { resolve } from "node:path"
 import { resolveParts, assertSourceParity } from "../library/parts"
 import { jlcpcbFootprintResolver } from "../library/footprints"
+import { projectToCircuitPlan, planMetadata } from "./project-adapter.js"
+import { NativeDesign } from "./native-design"
+import catalog from "../library/catalog.json"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -192,7 +195,7 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
     content=pinSnap.content
     const netSnap=snapWireEndsToLabels(content,new Set(netNames))
     content=netSnap.content
-    const finalLabels=sexprBlocks(content,"(label").flatMap(block=>{const m=block.text.match(/^\(label\s+"([^"]+)"[\s\S]*?\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/);return m&&m[1].startsWith("R1_R2_PIN")?[{name:m[1],x:Number(m[2]),y:Number(m[3])}]:[]})
+    const finalLabels=sexprBlocks(content,"(label").flatMap(block=>{const m=block.text.match(/^\(label\s+"([^"]+)"[\s\S]*?\(at\s+(-?[\d.]+)\s+(-?[\d.]+)/);return m&&netNames.includes(m[1])?[{name:m[1],x:Number(m[2]),y:Number(m[3])}]:[]})
     schematicFixes.push({filename:file.filename,pinLabelMoves:pinSnap.snapped,netWireSnaps:netSnap.snapped,moves:pinSnap.moves,finalLabels})
     return {...file,content}
   })
@@ -216,33 +219,42 @@ function prepareKicadParity(schematicFiles:{filename:string,content:string}[],pc
 }
 
 const root=resolve(import.meta.dir,"..")
-const out=resolve(root,"dist")
+const args=process.argv.slice(2)
+if(args.length!==0&&(args.length!==2||args[0]!=="--project-json"))throw new Error("Usage: bun run build [--project-json FILE]")
+const standalone=args.length===2
+// Parse before removing output; do not publish arbitrary browser exports to Pages.
+const input=standalone?projectToCircuitPlan(JSON.parse(await readFile(resolve(args[1]),"utf8")),catalog):null
+const out=resolve(root,standalone?"dist-native":"dist")
 await rm(out,{recursive:true,force:true})
 await mkdir(out,{recursive:true})
+if(!standalone){
 await cp(resolve(root,"site"),out,{recursive:true})
 const handoff=await Bun.build({entrypoints:[resolve(root,"site/handoff-entry.js")],target:"browser",outdir:out,naming:"handoff.js",minify:true})
 if(!handoff.success)throw new Error(handoff.logs.map(String).join("\n"))
 await rm(resolve(out,"handoff-entry.js"))
 await cp(resolve(root,"library","catalog.json"),resolve(out,"catalog.json"))
+}
 const index=[]
 let failed=false
-for(const id of (await readdir(resolve(root,"projects"))).sort()){
+for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects"))).sort())){
   if(!/^[a-z0-9][a-z0-9-]*$/.test(id))throw new Error("Invalid project slug: "+id)
   const dir=resolve(root,"projects",id)
-  const meta=JSON.parse(await readFile(resolve(dir,"project.json"),"utf8"))
+  const plan=input??(await Bun.file(resolve(dir,"native.json")).exists()?projectToCircuitPlan(JSON.parse(await readFile(resolve(dir,"native.json"),"utf8")),catalog):null)
+  const meta=plan?planMetadata(plan,id):JSON.parse(await readFile(resolve(dir,"project.json"),"utf8"))
+  if(standalone){const metadataDir=resolve(out,"input-projects",id);await mkdir(metadataDir,{recursive:true});await writeFile(resolve(metadataDir,"project.json"),JSON.stringify(meta,null,2))}
   if(meta.id!==id)throw new Error("Project id mismatch: "+id)
   const path=resolve(out,"projects",id)
   await mkdir(path,{recursive:true})
   const result={id,name:meta.name,revision:meta.revision,purpose:meta.purpose,status:"blocked",parts:[] as ReturnType<typeof resolveParts>,errors:[] as string[],files:[] as string[]}
   try{
     result.parts=resolveParts(meta.parts)
-    const Design=(await import(resolve(dir,"design.tsx"))).default
     const circuit=new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})
-    circuit.add(<Design />)
+    if(plan)circuit.add(<NativeDesign plan={plan}/>)
+    else {const Design=(await import(resolve(dir,"design.tsx"))).default;circuit.add(<Design />)}
     await circuit.renderUntilSettled()
     const json=circuit.getCircuitJson()
     const namedNets=json.filter((x:any)=>x.type==="source_net").map((x:any)=>x.name)
-    for(const expected of ["R1_R2_PIN1","R1_R2_PIN2"])if(!namedNets.includes(expected))throw new Error("Named net missing from Circuit JSON: "+expected)
+    for(const expected of meta.expectedNets??[])if(!namedNets.includes(expected))throw new Error("Named net missing from Circuit JSON: "+expected)
     await writeFile(resolve(path,"circuit.json"),JSON.stringify(json,null,2));result.files.push("circuit.json")
     assertSourceParity(json,result.parts)
     await writeFile(resolve(path,"schematic.svg"),convertCircuitJsonToSchematicSvg(json))

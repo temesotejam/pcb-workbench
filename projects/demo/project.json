@@ -30,5 +30,9 @@
       "reviewed": false
     }
   ],
-  "allowedWarnings": []
+  "allowedWarnings": [],
+  "expectedNets": [
+    "R1_R2_PIN1",
+    "R1_R2_PIN2"
+  ]
 }

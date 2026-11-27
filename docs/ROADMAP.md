@@ -4,7 +4,8 @@
 
 - Added schema v1 project model and browser editor: blank project, board dimensions, registered passive creation/deletion, schematic and PCB center coordinates, logical nets and pin assignment, JSON import/export and local browser persistence. This is not a physical editor or a manufacturing release.
 - Generic RC and resistor-pair model tests cover referential integrity, deletion, reassignment, roundtrip and review-only state. CI runs these tests.
-- Next: translate the validated JSON into the existing tscircuit/KiCad pipeline (eliminate fixed demo net checks), test multiple designs end-to-end, then add graphical symbols/footprints and routing, broader catalog/pin mapping and independent ERC/DRC/export.
+- JSON conversion candidate: validated schema-v1 models now map to tscircuit board/parts/positions/named pin traces; KiCad generation shares the existing pipeline, with expected net names supplied by each design rather than hard-coded. Two native fixtures exercise resistor and RC designs. CLI private output is separate from Pages. CI results for this change must be checked before claiming end-to-end success.
+- Next: confirm native fixture CI and independent KiCad ERC/DRC, check exact emitted pin/net and physical placement parity, then add graphical editing and routing. Keep manufacturing release blocked.
 - EasyEDA Bridge and NUCLEO handoff remain optional compatibility and example workflows, not the primary product goal.
 
 

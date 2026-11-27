@@ -15,7 +15,13 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 ### Independent browser design (early model editor)
 
 - [New project editor](https://temesotejam.github.io/pcb-workbench/editor.html): create a blank project, add registered resistor/capacitor parts, assign logical nets and pins, edit schematic/PCB center coordinates, and save or load schema-v1 JSON. Browser local storage is a convenience; download JSON backups.
-- No EasyEDA or Bridge is required for this editor. It does not yet generate physical routes, verify footprints, run full ERC/DRC, or produce manufacturing files from the new model. Existing build demo remains separate. NUCLEO is only an example.
+- No EasyEDA or Bridge is required for this editor. The browser still does not directly run the conversion engine. A separate Node/Bun build path accepts exported JSON, uses exact registered footprint identities and generates review-only previews and KiCad candidates. Physical routing and independent ERC/DRC for each design must be verified; no production approval. NUCLEO is only an example.
+
+### Independent JSON conversion (development)
+
+- Export project JSON from the browser, then run `bun install` and `bun run build --project-json /path/to/project.json`. No EasyEDA desktop or local Bridge is used. Exact footprint retrieval requires network access; failed imports are not substituted.
+- Outputs go to ignored `dist-native/projects/native/` (not the Pages directory). With KiCad CLI installed, `python3 scripts/fabricate.py dist-native dist-native/input-projects` runs draft export and checks. Each conversion replaces the previous output; copy anything needed before rerunning.
+- Native resistor and RC fixtures are built in CI alongside the legacy demo. Logical completeness is required; geometry, routing and physical/ERC/DRC results need separate verification. No order-ready output is enabled.
 
 ### What is implemented
 
