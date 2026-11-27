@@ -21,7 +21,7 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 
 - Export project JSON from the browser, then run `bun install` and `bun run build --project-json /path/to/project.json`. No EasyEDA desktop or local Bridge is used. Exact footprint retrieval requires network access; failed imports are not substituted.
 - Outputs go to ignored `dist-native/projects/native/` (not the Pages directory). With KiCad CLI installed, `python3 scripts/fabricate.py dist-native dist-native/input-projects` runs draft export and checks. Each conversion replaces the previous output; copy anything needed before rerunning.
-- Native resistor and RC fixtures are built in CI alongside the legacy demo. Logical completeness is required; geometry, routing and physical/ERC/DRC results need separate verification. No order-ready output is enabled.
+- Native resistor and RC fixtures are built in CI alongside the legacy demo. [KiCad 10.0.8 independent verification](https://github.com/temesotejam/pcb-workbench/actions/runs/45992151267) on 27 Nov 2026 found zero ERC/DRC findings, parity conflicts or unconnected items for all three; draft Gerber/drill/BOM/CPL generation succeeded. This is fixture evidence only. Arbitrary designs, component identity/availability, centroid/rotation and JLCPCB preview must be verified separately. No order-ready output is enabled.
 
 ### What is implemented
 
