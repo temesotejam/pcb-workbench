@@ -8,6 +8,8 @@ on:
       - 'library/parts.tsx'
       - 'library/footprints.ts'
       - 'scripts/**'
+      - 'site/route-geometry.js'
+      - 'site/footprint-preview.js'
       - 'site/project-model.js'
       - 'package.json'
       - 'bun.lock'
@@ -19,6 +21,8 @@ on:
       - 'library/parts.tsx'
       - 'library/footprints.ts'
       - 'scripts/**'
+      - 'site/route-geometry.js'
+      - 'site/footprint-preview.js'
       - 'site/project-model.js'
       - 'package.json'
       - 'bun.lock'
@@ -49,6 +53,10 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python3 scripts/fabricate.py dist
+      - name: Verify independent DRC rejects intentionally invalid copies
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python3 -m scripts.negative_drc dist projects/native-resistors-manual/project.json
       - name: Upload draft manufacturing files and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
