@@ -12,6 +12,10 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
+### Two-layer route draft (development)
+
+- Optional waypoint `via: {diameter, drill}` switches between top and bottom copper. Both endpoints are top SMD pads; an even number of through-vias is mandatory. Numeric entry accepts `x,y` or `x,y,diameter,drill` in mm; routes preserve via dimensions in schema-v1 JSON and display copper by layer plus via rings. No blind/buried vias or bottom components. This is a geometry draft, not a manufacturing rule profile. Via-bearing designs are explicitly refused by the converter until serialized via and drill parity and independent DRC pass. Existing top-layer route workflow is unchanged. Graphical via placement remains pending.
+
 ### Manual top-layer routing draft (development)
 
 - Candidate manual export: the build opts into complete explicit top-layer routing, disables automatic routing and injects exact Circuit JSON wire points only after checking source pin, PCB port and real pad center agreement. Partial nets, missing geometry or unexpected existing copper fail closed. Two new manual fixture boards exercise the existing KiCad pipeline. A serialized segment audit checks coordinates, width, top copper and net identity; independent DRC remains separate. [CI verification passed](https://github.com/temesotejam/pcb-workbench/actions/runs/46044284029) for five fixture boards, including two manual designs. No production approval. A new export gate candidate prevents creating Gerber/BOM/CPL on failed electrical/physical checks and removes stale draft outputs; independent negative tests are pending.
