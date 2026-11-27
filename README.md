@@ -12,6 +12,11 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
+### Independent browser design (early model editor)
+
+- [New project editor](https://temesotejam.github.io/pcb-workbench/editor.html): create a blank project, add registered resistor/capacitor parts, assign logical nets and pins, edit schematic/PCB center coordinates, and save or load schema-v1 JSON. Browser local storage is a convenience; download JSON backups.
+- No EasyEDA or Bridge is required for this editor. It does not yet generate physical routes, verify footprints, run full ERC/DRC, or produce manufacturing files from the new model. Existing build demo remains separate. NUCLEO is only an example.
+
 ### What is implemented
 
 - Import the verified NUCLEO handoff ZIP in the browser. The adapter strips its single archive root folder, selects only the current upper/lower native project sources and checks the manifest SHA-256 values. The original ZIP and native project files are not committed to this public repository.

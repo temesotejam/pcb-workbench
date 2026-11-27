@@ -28,11 +28,11 @@ jobs:
       - name: Install circuit engine
         run: bun install
       - name: Catalog and local agent tests
-        run: bun test library/catalog.test.ts library/handoff-core.test.ts library/native-patch.test.ts && node --test agent/engine.test.mjs agent/bridge.test.mjs
+        run: bun test library/catalog.test.ts library/handoff-core.test.ts library/native-patch.test.ts && node --test agent/engine.test.mjs agent/bridge.test.mjs tests/project-model.test.mjs
       - name: Generate circuit and KiCad sources
         run: bun run build
       - name: Check browser module syntax
-        run: node --check site/app.js && node --check site/catalog.js && node --check site/handoff-entry.js
+        run: node --check site/app.js && node --check site/catalog.js && node --check site/handoff-entry.js && node --check site/editor.js && node --check site/project-model.js
       - name: Prepare safe public preview (no draft order files)
         if: success() && github.event_name != 'pull_request'
         run: |
