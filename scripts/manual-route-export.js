@@ -96,11 +96,12 @@ export function verifyKicadManualSegments(pcbText,segmentBlocks,json,project){
   const actual=segmentBlocks.map(block=>{
     const a=field(block,/\(start\s+([^\s()]+)\s+([^\s()]+)\s*\)/,"start"),b=field(block,/\(end\s+([^\s()]+)\s+([^\s()]+)\s*\)/,"end");
     const width=field(block,/\(width\s+([^\s()]+)\s*\)/,"width")[1];
-    const layer=field(block,/\(layer\s+"([^"]+)"\s*\)/,"layer")[1];
+    const layerMatch=field(block,/\(layer\s+(?:"([^"]+)"|([^\s()"]+))\s*\)/,"layer");
+    const layer=layerMatch[1]??layerMatch[2];
     const net=Number(field(block,/\(net\s+(\d+)\s*\)/,"net")[1]);
     return signature({x:a[1],y:a[2]},{x:b[1],y:b[2]},width,layer,net);
   });
   expected.sort();actual.sort();
-  if(expected.length!==actual.length||expected.some((s,i)=>s!==actual[i]))throw new Error("Serialized KiCad manual segment parity mismatch");
+  if(expected.length!==actual.length||expected.some((s,i)=>s!==actual[i]))throw new Error("Serialized KiCad manual segment parity mismatch: expected "+expected.length+", actual "+actual.length+", first difference "+JSON.stringify({expected:expected.find((s,i)=>s!==actual[i]),actual:actual.find((s,i)=>s!==expected[i])}));
   return {routes:project.routes.length,segments:expected.length,coordinateResolutionMm:0.00001,physicalDrcVerified:false,orderReady:false};
 }

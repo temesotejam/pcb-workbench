@@ -134,6 +134,7 @@ test("serialized KiCad parity rejects changed waypoint, width, net, layer or ext
   }));
   const verify=b=>verifyKicadManualSegments(header,b,out,p);
   assert.deepEqual(verify(blocks),{routes:2,segments:4,coordinateResolutionMm:.00001,physicalDrcVerified:false,orderReady:false});
+  assert.equal(verify(blocks.map(b=>b.replace('"F.Cu"','F.Cu'))).segments,4);
   for(const changed of [
     blocks[0].replace("(end 100 96)","(end 100 95.5)"),
     blocks[0].replace("(width 0.25)","(width 0.3)"),
