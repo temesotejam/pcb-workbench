@@ -12,6 +12,10 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
+### Draft routing progress (development)
+
+- PR #12 passed [build](https://github.com/temesotejam/pcb-workbench/actions/runs/46077774469) and [manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46077774468), merged at 868d00d. Candidate: PCB ratlines now connect remaining draft connectivity groups only; removing a route restores the corresponding missing links. Only successfully rendered routes count, with no physical DRC claim. Added graph regression tests and a real Chromium interaction smoke test against the generated site (CI pending); no production approval.
+
 ### Two-layer routing and drill parity (development)
 
 - PR #11 graphical via insertion merged at f056c1f after [build](https://github.com/temesotejam/pcb-workbench/actions/runs/46071284995) and [manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46071284971) passed. New candidate audits the actual KiCad absolute metric decimal Excellon drill file against the manual model (1 µm resolution), including plating classification, count, coordinates and diameters; mismatch or unsupported syntax blocks the entire draft export. This is restricted to current all-top-SMD manual boards with through-vias, not arbitrary hole or slot formats. CI pending; real browser interaction remains outstanding.
