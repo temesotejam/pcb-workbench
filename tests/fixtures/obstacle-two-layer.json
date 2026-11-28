@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "name": "Independent obstacle routing — two-layer crossing",
   "board": {
-    "width": 8,
+    "width": 8.6,
     "height": 15
   },
   "components": [
