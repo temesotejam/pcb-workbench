@@ -62,6 +62,20 @@ function validateProject(p,catalog){
       check(transitions%2===0,"Top SMD endpoints require an even number of layer transitions");
     }
   }
+  if(p.zones!==undefined){
+    check(Array.isArray(p.zones)&&p.zones.length<=100,"Invalid zone collection");
+    const ids=new Set();
+    for(const z of p.zones){
+      check(isObject(z)&&typeof z.id==="string"&&/^Z[1-9][0-9]{0,5}$/.test(z.id)&&!ids.has(z.id),"Invalid or duplicate zone ID");
+      ids.add(z.id);
+      check(names.has(z.net),"Zone references an unknown net; delete the zone first");
+      check(["top","bottom"].includes(z.layer),"Invalid zone layer");
+      check(typeof z.clearance==="number"&&Number.isFinite(z.clearance)&&z.clearance>=.05&&z.clearance<=5,"Invalid draft zone clearance");
+      const b=z.bounds;
+      check(isObject(b)&&[b.xMin,b.yMin,b.xMax,b.yMax].every(coord)&&b.xMax-b.xMin>=.05&&b.yMax-b.yMin>=.05,"Invalid rectangular zone bounds");
+      check(b.xMin>=-p.board.width/2&&b.xMax<=p.board.width/2&&b.yMin>=-p.board.height/2&&b.yMax<=p.board.height/2,"Zone outside board");
+    }
+  }
   return p;
 }
 
@@ -107,6 +121,22 @@ function applyEdit(project,edit,catalog){
     case "remove-route":
       check((p.routes??[]).some(t=>t.id===edit.id),"Unknown route");
       p.routes=p.routes.filter(t=>t.id!==edit.id);break;
+    case "add-zone":
+    case "update-zone":{
+      const zones=p.zones??(p.zones=[]);
+      let id=edit.id;
+      if(edit.type==="add-zone"){
+        let i=1;while(zones.some(z=>z.id==="Z"+i))i++;id="Z"+i;
+      }else check(zones.some(z=>z.id===id),"Unknown zone");
+      const b=edit.bounds;
+      const zone={id,net:edit.net,layer:edit.layer,clearance:edit.clearance,bounds:{xMin:b?.xMin,yMin:b?.yMin,xMax:b?.xMax,yMax:b?.yMax}};
+      if(edit.type==="add-zone")zones.push(zone);
+      else zones[zones.findIndex(z=>z.id===id)]=zone;
+      break;
+    }
+    case "remove-zone":
+      check((p.zones??[]).some(z=>z.id===edit.id),"Unknown zone");
+      p.zones=p.zones.filter(z=>z.id!==edit.id);break;
     case "add-net":p.nets.push({name:edit.name,pins:[]});break;
     case "remove-net":net();p.nets=p.nets.filter(n=>n.name!==edit.name);break;
     case "connect-pins":{
@@ -144,6 +174,7 @@ function inspectProject(p,catalog){
     if(Math.abs(c.pcb.x)>p.board.width/2||Math.abs(c.pcb.y)>p.board.height/2)issues.push("Component center outside board: "+c.ref);
   }
   for(const n of p.nets)if(n.pins.length<2)issues.push("Net has fewer than two pins: "+n.name);
+  if(p.zones?.length)issues.push("Copper zone outlines are unfilled drafts; independent fill and clearance verification required");
   if(p.routes?.length)issues.push("Manual routes require independent physical connectivity and clearance verification");
   if(p.routes?.some(t=>t.waypoints.some(q=>q.via!==undefined)))issues.push("Two-layer routes require serialized via parity and independent KiCad verification");
   return {issues,orderReady:false,scope:"logical connectivity and center bounds only; no ERC/DRC or footprint verification"};

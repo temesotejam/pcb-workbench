@@ -57,6 +57,7 @@ function render(){
   const nets=table($("nets"),["ネット","接続ピン","操作"]);
   for(const n of project.nets){const row=el("tr",null,nets);el("td",n.name,row);el("td",n.pins.map(p=>p.ref+":"+p.pin).join(", ")||"未接続",row);button(el("td",null,row),"削除",()=>action({type:"remove-net",name:n.name}))}
   renderRoutes();
+  renderZones();
   renderClearance();
   renderSchematic(project,catalog);renderPcb(project,catalog,footprints);
   const missing=project.components.filter(c=>footprints?.parts?.[c.lcsc]?.pads?.length!==2).map(c=>c.ref);
@@ -72,6 +73,7 @@ function renderClearance(){
     for(const f of report.findings)lines.push(f.a+" ["+f.netA+"] / "+f.b+" ["+f.netB+"] "+(f.layer==="top"?"F.Cu":"B.Cu")+" "+(f.kind==="overlap"?"銅箔接触・重なり":"間隔不足")+" "+f.gapMm.toFixed(3)+" mm");
     if(report.totalFindings>report.findings.length)lines.push("表示は先頭 "+report.findings.length+" 件");
     for(const f of report.unavailable.slice(0,20))lines.push(f.id+": "+f.message);
+    if(project.zones?.length)lines.unshift("銅箔ゾーンは未充填・検査対象外です。");
     output.textContent=lines.join("\n");
   }catch(e){output.textContent="検査できません: "+e.message}
 }
@@ -96,6 +98,36 @@ function renderRoutes(){
     el("td",note,row);button(el("td",null,row),"削除",()=>action({type:"remove-route",id:route.id}));
   }
 }
+function renderZones(){
+  const select=$("zone-net"),previous=select.value;
+  select.replaceChildren();option(select,"","選択");
+  for(const n of project.nets)option(select,n.name,n.name);
+  if(project.nets.some(n=>n.name===previous))select.value=previous;
+  const rows=table($("zones"),["ID / Net","層","範囲 mm","参考間隔 mm","操作"]);
+  for(const z of project.zones??[]){
+    const row=el("tr",null,rows),b=z.bounds;
+    el("td",z.id+" / "+z.net,row);el("td",z.layer==="top"?"F.Cu":"B.Cu",row);
+    el("td",b.xMin+","+b.yMin+" → "+b.xMax+","+b.yMax,row);el("td",String(z.clearance),row);
+    const cell=el("td",null,row);
+    button(cell,"編集",()=>{
+      $("zone-id").value=z.id;$("zone-net").value=z.net;$("zone-layer").value=z.layer;$("zone-clearance").value=z.clearance;
+      for(const k of ["xMin","yMin","xMax","yMax"])$("zone-"+k).value=b[k];
+      $("zone-submit").textContent=z.id+" 更新";
+    });
+    button(cell,"削除",()=>{resetZoneEdit();action({type:"remove-zone",id:z.id})});
+  }
+  if(!project.zones?.some(z=>z.id===$("zone-id").value))resetZoneEdit();
+}
+function resetZoneEdit(){$("zone-id").value="";$("zone-submit").textContent="ゾーン追加"}
+$("zone-cancel").onclick=resetZoneEdit;
+$("zone-form").onsubmit=e=>{
+  e.preventDefault();
+  try{
+    const id=$("zone-id").value,bounds=Object.fromEntries(["xMin","yMin","xMax","yMax"].map(k=>[k,$("zone-"+k).valueAsNumber]));
+    const next=applyEdit(project,{type:id?"update-zone":"add-zone",id,net:$("zone-net").value,layer:$("zone-layer").value,clearance:$("zone-clearance").valueAsNumber,bounds},catalog);
+    resetZoneEdit();setProject(next,"未充填ゾーンの範囲を保存しました（製造変換不可）");
+  }catch(err){status(err.message)}
+};
 function addRoute(edit){
   try{
     const next=applyEdit(project,edit,catalog);
@@ -121,8 +153,8 @@ try{
   $("controls").hidden=false;status(message);render();
 }catch(e){status("初期化失敗: "+e.message)}
 $("board-form").onsubmit=e=>{e.preventDefault();try{const next=applyEdit(applyEdit(project,{type:"rename",name:$("project-name").value},catalog),{type:"board",width:$("width").valueAsNumber,height:$("height").valueAsNumber},catalog);setProject(next,"プロジェクト更新")}catch(err){status(err.message)}};
-$("new").onclick=()=>{if(confirm("現在のプロジェクトを置換します。必要に応じて先にJSON保存してください。"))setProject(createProject(),"新規作成")};
+$("new").onclick=()=>{if(confirm("現在のプロジェクトを置換します。必要に応じて先にJSON保存してください。"))(resetZoneEdit(),setProject(createProject(),"新規作成"))};
 $("add-component").onsubmit=e=>{e.preventDefault();action({type:"add-component",lcsc:$("part").value})};
 $("add-net").onsubmit=e=>{e.preventDefault();action({type:"add-net",name:$("net-name").value})};
 $("export").onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(project,null,2)],{type:"application/json"})),a=el("a",null,document.body);a.href=url;a.download="pcb-workbench-project.json";a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-$("import").onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2000000)throw new Error("JSONが大きすぎます");const next=validateProject(JSON.parse(await file.text()),catalog);if(confirm("現在のプロジェクトを置換しますか？"))setProject(next,"JSONを読み込みました")}catch(err){status("読込失敗: "+err.message)}finally{e.target.value=""}};
+$("import").onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2000000)throw new Error("JSONが大きすぎます");const next=validateProject(JSON.parse(await file.text()),catalog);if(confirm("現在のプロジェクトを置換しますか？"))(resetZoneEdit(),setProject(next,"JSONを読み込みました"))}catch(err){status("読込失敗: "+err.message)}finally{e.target.value=""}};
