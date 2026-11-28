@@ -11,6 +11,7 @@ import catalog from "../library/catalog.json"
 import { normalizeFootprint } from "../site/footprint-preview.js"
 import { injectManualRoutes, verifyKicadManualSegments } from "./manual-route-export.js"
 import { splitManualProject, prepareMixedRouting, mixedManualSegmentBlocks } from "./mixed-route-export.js"
+import { buildMixedAutorouterInput } from "./autorouter-input.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -276,6 +277,9 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
       }
       if(mixed){
         const {unrouted,retained}=prepareMixedRouting(json,mixed.automaticNets,engine.aliases)
+        const routingInput=buildMixedAutorouterInput(plan.manualProject,{parts},unrouted)
+        await writeFile(resolve(path,"autorouter-input.json"),JSON.stringify(routingInput,null,2));result.files.push("autorouter-input.json")
+        console.log(id,"draft obstacle routing input",routingInput.connections.length,"connections",routingInput.obstacles.length,"obstacles (solver not invoked)")
         json=[...injectManualRoutes(unrouted,mixed.manual,{parts},engine.aliases),...retained]
       }else json=injectManualRoutes(json,plan.manualProject,{parts},engine.aliases)
     }
