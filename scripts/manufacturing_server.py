@@ -1,5 +1,6 @@
 """Single-user same-origin review-only manufacturing service; not a public API."""
 import argparse
+import csv
 import hashlib
 import io
 import json
@@ -71,6 +72,39 @@ def audit_gerber_archive(path):
         raise Rejected("Invalid Gerber ZIP") from exc
 
 
+def audit_assembly_delivery(draft, source):
+    """Require exact source reference parity in each delivered assembly CSV."""
+    parts = json.loads(source).get("components")
+    if not isinstance(parts, list) or not parts:
+        raise Rejected("Missing source components")
+    refs = [part.get("ref") for part in parts if isinstance(part, dict)]
+    if (len(refs) != len(parts) or any(not isinstance(ref, str) or not ref for ref in refs)
+            or len(set(refs)) != len(refs)):
+        raise Rejected("Invalid source component references")
+    for name in ("BOM.csv", "CPL.csv"):
+        try:
+            with (draft / name).open(encoding="utf-8-sig", newline="") as stream:
+                rows = csv.DictReader(stream)
+                if not rows.fieldnames or rows.fieldnames.count("Designator") != 1:
+                    raise Rejected(name + " missing unique Designator column")
+                actual = [row.get("Designator") for row in rows]
+        except (UnicodeError, csv.Error) as exc:
+            raise Rejected(name + " invalid CSV") from exc
+        if len(actual) != len(refs) or set(actual) != set(refs):
+            raise Rejected(name + " source reference mismatch")
+
+
+def stage_diagnostic(path, key, work):
+    """Expose bounded, job-local diagnostics, never arbitrary process logs."""
+    try:
+        values = read_json(path).get(key, [])
+        if not isinstance(values, list):
+            return ""
+        return "; ".join(str(value) for value in values[:10]).replace(str(work), "[job]")[:1500]
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+
+
 def bundle(board, source):
     summary = read_json(board / "project.json")
     validation = read_json(board / "validation.json")
@@ -83,6 +117,7 @@ def bundle(board, source):
     if sum(p.stat().st_size for p in paths) + len(source) > MAX_RESULT:
         raise Rejected("Draft exceeds size limit")
     audit_gerber_archive(board / "draft" / "Gerber.zip")
+    audit_assembly_delivery(board / "draft", source)
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in paths:
@@ -109,15 +144,14 @@ def manufacture(source):
         board = out / "projects" / "native"
         if run_stage(["bun", "run", str(ROOT / "scripts/build.tsx"), "--project-json", str(input_path)],
                      ROOT, env):
-            raise Rejected("Design conversion failed (unsupported or incomplete design)")
+            detail = stage_diagnostic(board / "project.json", "errors", work)
+            raise Rejected("Design conversion failed (unsupported or incomplete design)" + (": " + detail if detail else ""))
         if run_stage([sys.executable, str(ROOT / "scripts/fabricate.py"), str(out), str(out / "input-projects")],
                      work, env):
             detail = "Independent manufacturing checks failed"
-            report = board / "validation.json"
-            if report.is_file():
-                blockers = read_json(report).get("blockers", [])
-                if isinstance(blockers, list):
-                    detail += ": " + "; ".join(str(b) for b in blockers)[:2000]
+            blockers = stage_diagnostic(board / "validation.json", "blockers", work)
+            if blockers:
+                detail += ": " + blockers
             raise Rejected(detail)
         return bundle(board, source)
 

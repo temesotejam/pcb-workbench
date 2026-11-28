@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from http.server import HTTPServer
 import zipfile
-from scripts.manufacturing_server import API, FILES, Rejected, audit_gerber_archive, bundle, make_handler
+from scripts.manufacturing_server import API, FILES, Rejected, audit_gerber_archive, audit_assembly_delivery, stage_diagnostic, bundle, make_handler
 
 
 def gerber_zip(entries):
@@ -37,7 +37,7 @@ class ManufacturingServerTests(unittest.TestCase):
             audit_gerber_archive(io.BytesIO(b'not zip'))
 
     def test_bundle_exact_source_and_allowlist(self):
-        source = b'{"schemaVersion":1}'
+        source = b'{"schemaVersion":1,"components":[{"ref":"R1"},{"ref":"R2"}]}'
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory)
             draft = board / "draft"
@@ -47,6 +47,8 @@ class ManufacturingServerTests(unittest.TestCase):
             for name in FILES:
                 (draft / name).write_text(name)
             (draft / "Gerber.zip").write_bytes(gerber_zip([("board.gtl",b"%TF.FileFunction,Copper,L1,Top*%"),("board.gko",b"outline")]).getvalue())
+            for name in ("BOM.csv", "CPL.csv"):
+                (draft / name).write_text("Designator\nR2\nR1\n")
             (draft / "unexpected").write_text("not exported")
             with zipfile.ZipFile(io.BytesIO(bundle(board, source))) as archive:
                 self.assertEqual(set(archive.namelist()), set(FILES) | {"source-project.json","source-sha256.txt"})
@@ -63,6 +65,34 @@ class ManufacturingServerTests(unittest.TestCase):
             (board / "project.json").write_text('{"status":"blocked","orderReady":false}')
             with self.assertRaises(Rejected):
                 bundle(board, source)
+
+    def test_assembly_delivery_rejects_missing_extra_duplicate_refs(self):
+        source = b'{"components":[{"ref":"R1"},{"ref":"R2"}]}'
+        with tempfile.TemporaryDirectory() as directory:
+            draft = Path(directory)
+            for name in ("BOM.csv", "CPL.csv"):
+                (draft / name).write_text("Designator,Other\nR2,x\nR1,y\n")
+            audit_assembly_delivery(draft, source)
+            for name in ("BOM.csv", "CPL.csv"):
+                for invalid in ("Designator\nR1\n", "Designator\nR1\nR1\n",
+                                "Designator\nR1\nR3\n", "Wrong\nR1\nR2\n",
+                                "Designator,Designator\nR1,R1\nR2,R2\n"):
+                    with self.subTest(name=name, invalid=invalid), self.assertRaises(Rejected):
+                        (draft / name).write_text(invalid)
+                        audit_assembly_delivery(draft, source)
+                (draft / name).write_text("Designator\nR2\nR1\n")
+
+    def test_stage_diagnostic_is_bounded_and_redacts_job_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            report = work / "project.json"
+            report.write_text(json.dumps({"errors":[str(work) + "/input.json", "x"*2000]}))
+            detail = stage_diagnostic(report, "errors", work)
+            self.assertTrue(detail.startswith("[job]/input.json"))
+            self.assertNotIn(str(work), detail)
+            self.assertEqual(len(detail), 1500)
+            report.write_text("not json")
+            self.assertEqual(stage_diagnostic(report, "errors", work), "")
 
     def test_http_gate_and_exact_snapshot(self):
         calls = []

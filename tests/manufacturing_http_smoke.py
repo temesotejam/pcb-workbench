@@ -17,8 +17,14 @@ def run():
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            def submit(source):
-                return urlopen(Request(origin + API, source, {"Origin":origin,"Content-Type":"application/json"}), timeout=380)
+            def submit(source, label="invalid fixture"):
+                try:
+                    return urlopen(Request(origin + API, source, {"Origin":origin,"Content-Type":"application/json"}), timeout=380)
+                except HTTPError as error:
+                    if label != "invalid fixture":
+                        print("HTTP manufacturing failed:", label, error.code,
+                              error.read(4096).decode("utf-8", errors="replace"), flush=True)
+                    raise
             cases = [(path, (ROOT / path).read_bytes()) for path in
                      ["projects/native-resistors-manual/native.json","projects/native-rc-manual/native.json"]]
             # Exercise the HTTP-specific automatic routing flags and zone fill.
@@ -33,7 +39,7 @@ def run():
                 zone("Z4","RETURN_B","bottom",1,14.5)]
             cases.append(("two-layer-multi-with-zones", json.dumps(complex_project).encode()))
             for path, source in cases:
-                with submit(source) as response, zipfile.ZipFile(io.BytesIO(response.read())) as archive:
+                with submit(source, path) as response, zipfile.ZipFile(io.BytesIO(response.read())) as archive:
                     assert response.headers["Content-Type"] == "application/zip"
                     assert set(archive.namelist()) == set(FILES) | {"source-project.json","source-sha256.txt"}
                     assert archive.read("source-project.json") == source
