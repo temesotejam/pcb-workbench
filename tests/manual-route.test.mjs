@@ -273,3 +273,31 @@ test("mixed serialized net partition rejects missing or unidentified automatic c
   assert.throws(()=>filter([manual,auto,'(segment (net 3))']),/Unexpected serialized mixed segment net/);
   assert.throws(()=>filter([manual,auto,'(segment (net 99))']),/Unknown serialized mixed segment net/);
 });
+
+import {scanCopperClearance,inspectDraftClearance} from "../site/copper-clearance.js";
+const draftShape=(id,net,layer,x1,y1,x2,y2,radius=.1)=>({id,net,layer,a:{x:x1,y:y1},b:{x:x2,y:y2},radius});
+test("draft copper clearance detects crossings, touch and collinear overlap; respects layer and net",()=>{
+  const a=draftShape("T1","A","top",-2,0,2,0);
+  const check=(b,kind)=>{const r=scanCopperClearance([a,b]);assert.equal(r.totalFindings,kind?1:0);if(kind)assert.equal(r.findings[0].kind,kind);assert.equal(r.orderReady,false)};
+  check(draftShape("T2","B","top",0,-2,0,2),"overlap");
+  check(draftShape("T2","B","bottom",0,-2,0,2));
+  check(draftShape("T2","A","top",0,-2,0,2));
+  check(draftShape("T2","B","top",2,0,4,0),"overlap");
+  check(draftShape("T2","B","top",-1,0,1,0),"overlap");
+  check(draftShape("T2","B","top",-2,.3,2,.3),"clearance");
+  check(draftShape("T2","B","top",-2,.4,2,.4));
+});
+test("draft copper clearance handles via disks, bounded scans and missing geometry",()=>{
+  const a=draftShape("T1","A","top",-2,0,2,0);
+  const b=draftShape("V1","B","top",0,.45,0,.45,.2);
+  assert.equal(scanCopperClearance([a,b]).findings[0].kind,"clearance");
+  assert.equal(scanCopperClearance([a,{...b,layer:"bottom"}]).totalFindings,0);
+  assert.equal(scanCopperClearance([a,b],.2,{maxComparisons:0}).complete,false);
+  assert.equal(scanCopperClearance([a,b],.2,{maxItems:1}).complete,false);
+  assert.throws(()=>scanCopperClearance([a,b],NaN),/Invalid draft clearance/);
+  const {p,f}=manualCase();
+  const before=JSON.stringify(p);
+  assert.equal(inspectDraftClearance(p,f).complete,true);
+  assert.equal(inspectDraftClearance(p,{}).complete,false);
+  assert.equal(JSON.stringify(p),before);
+});

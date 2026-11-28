@@ -1,6 +1,7 @@
 import {createProject,validateProject,applyEdit,inspectProject} from "./project-model.js";
 import {attachGraphicEditor} from "./editor-graphics.js";
 import {routeCopper,parseWaypoints} from "./route-geometry.js";
+import {inspectDraftClearance} from "./copper-clearance.js";
 const $=id=>document.getElementById(id);
 const key="pcb-workbench.native-project.v1";
 let catalog,project,footprints;
@@ -56,11 +57,25 @@ function render(){
   const nets=table($("nets"),["ネット","接続ピン","操作"]);
   for(const n of project.nets){const row=el("tr",null,nets);el("td",n.name,row);el("td",n.pins.map(p=>p.ref+":"+p.pin).join(", ")||"未接続",row);button(el("td",null,row),"削除",()=>action({type:"remove-net",name:n.name}))}
   renderRoutes();
+  renderClearance();
   renderSchematic(project,catalog);renderPcb(project,catalog,footprints);
   const missing=project.components.filter(c=>footprints?.parts?.[c.lcsc]?.pads?.length!==2).map(c=>c.ref);
   $("footprint-status").textContent=missing.length?"実パッド未取得: "+missing.join(", ")+"。関連する接続線は表示しません。":"登録部品の取得済み実パッドを表示（製造承認なし）。";
   const report=inspectProject(project,catalog);$("diagnostics").textContent=report.issues.length?report.issues.join("\n"):"論理検査の指摘なし（製造可否は未確認）";
 }
+function renderClearance(){
+  const output=$("copper-diagnostics");
+  if(!project)return;
+  try{
+    const report=inspectDraftClearance(project,footprints,$("draft-clearance").valueAsNumber);
+    const lines=[report.complete?"仮配線同士の検査: "+report.totalFindings+" 件":"検査未完了（"+(report.reason??"実パッド・配線形状が未取得")+"）: 検出済み "+report.totalFindings+" 件"];
+    for(const f of report.findings)lines.push(f.a+" ["+f.netA+"] / "+f.b+" ["+f.netB+"] "+(f.layer==="top"?"F.Cu":"B.Cu")+" "+(f.kind==="overlap"?"銅箔接触・重なり":"間隔不足")+" "+f.gapMm.toFixed(3)+" mm");
+    if(report.totalFindings>report.findings.length)lines.push("表示は先頭 "+report.findings.length+" 件");
+    for(const f of report.unavailable.slice(0,20))lines.push(f.id+": "+f.message);
+    output.textContent=lines.join("\n");
+  }catch(e){output.textContent="検査できません: "+e.message}
+}
+$("draft-clearance").oninput=renderClearance;
 function renderRoutes(){
   const selects=[$("route-from"),$("route-to")];
   for(const select of selects){
