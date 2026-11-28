@@ -117,6 +117,20 @@ jobs:
             node --input-type=module -e 'import fs from "node:fs";import assert from "node:assert/strict";const s=JSON.parse(fs.readFileSync("dist-native/projects/native/project.json"));assert.equal(s.status,"draft");assert.equal(s.orderReady,false);assert.equal(s.zoneParity.length,1);assert.equal(s.zoneParity[0].layer,"F.Cu");assert.ok(s.zoneParity[0].polygonAreaMm2>1);'
             cp -r dist-native/projects/native "zone-verification/$id"
           done
+      - name: Verify four disjoint copper zones with automatic plated vias
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PCBWB_ZONE_FILL: '1'
+          PCBWB_OBSTACLE_ROUTER: '1'
+          PCBWB_OBSTACLE_TWO_LAYER: '1'
+          PCBWB_OBSTACLE_REVERSE_RETRY: '1'
+        run: |
+          set -euo pipefail
+          node --input-type=module -e 'import fs from "node:fs";const p=JSON.parse(fs.readFileSync("tests/fixtures/obstacle-two-layer-multi.json"));const z=(id,net,layer,yMin,yMax)=>({id,net,layer,clearance:.25,bounds:{xMin:-3.8,xMax:3.8,yMin,yMax}});p.zones=[z("Z1","SUPPLY","top",-14.5,-1),z("Z2","SUPPLY_B","top",1,14.5),z("Z3","RETURN","bottom",-14.5,-1),z("Z4","RETURN_B","bottom",1,14.5)];fs.writeFileSync("/tmp/zone-via-fixture.json",JSON.stringify(p));'
+          bun run build --project-json /tmp/zone-via-fixture.json
+          python3 scripts/fabricate.py dist-native dist-native/input-projects
+          node --input-type=module -e 'import fs from "node:fs";import assert from "node:assert/strict";const s=JSON.parse(fs.readFileSync("dist-native/projects/native/project.json"));assert.equal(s.status,"draft");assert.equal(s.orderReady,false);assert.equal(s.expectedViaDrills.length,4);assert.ok(s.expectedViaDrills.every(v=>v.drill===.3));assert.ok(s.drillParity);assert.deepEqual(s.zoneParity.map(z=>[z.id,z.net,z.layer]).sort(),[["Z1","/SUPPLY","F.Cu"],["Z2","/SUPPLY_B","F.Cu"],["Z3","/RETURN","B.Cu"],["Z4","/RETURN_B","B.Cu"]]);assert.ok(s.zoneParity.every(z=>z.polygonAreaMm2>1));console.log(JSON.stringify({zoneParity:s.zoneParity,drillParity:s.drillParity}));'
+          cp -r dist-native/projects/native zone-verification/disjoint-zones-vias
       - name: Upload draft manufacturing files and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
