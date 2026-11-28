@@ -144,6 +144,33 @@ def run():
             assert saved() == crossed
             page.locator("#routes").get_by_role("button", name="削除").first.click()
             expect(page.locator("#copper-diagnostics")).to_contain_text("仮配線同士の検査: 0 件")
+            # An unfilled zone must be visible without covering pads or
+            # satisfying ratlines. Persist edits and reject a dangling net.
+            ratline_count = ratlines.count()
+            page.locator("#zone-net").select_option("A")
+            page.locator("#zone-layer").select_option("bottom")
+            for key, value in (("xMin",-4),("yMin",-3),("xMax",4),("yMax",3)):
+                page.locator("#zone-"+key).fill(str(value))
+            page.locator("#zone-submit").click()
+            zone = pcb.locator('[data-zone="Z1"]')
+            expect(zone).to_have_count(1)
+            expect(zone).to_have_attribute("data-zone-layer","bottom")
+            expect(zone).to_have_attribute("fill","none")
+            expect(ratlines).to_have_count(ratline_count)
+            expect(page.locator("#copper-diagnostics")).to_contain_text("未充填")
+            page.locator("#zones").get_by_role("button",name="編集").click()
+            page.locator("#zone-layer").select_option("top")
+            page.locator("#zone-submit").click()
+            expect(zone).to_have_attribute("data-zone-layer","top")
+            with_zone = saved()
+            page.locator("#nets tr").filter(has_text="A").get_by_role("button",name="削除").click()
+            assert saved() == with_zone
+            page.reload()
+            expect(zone).to_have_attribute("data-zone-layer","top")
+            assert saved() == with_zone
+            page.locator("#zones").get_by_role("button",name="削除").click()
+            expect(zone).to_have_count(0)
+            assert saved()["zones"] == []
             assert not errors, errors
             context.close()
             browser.close()

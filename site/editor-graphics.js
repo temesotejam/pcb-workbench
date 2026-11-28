@@ -214,6 +214,12 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{},routing=null
     if(view==="pcb"){
       const {width,height}=project.board;
       node("rect",{x:-width/2,y:-height/2,width,height,fill:"#16332e",stroke:"#61d1b3","stroke-width":.16,"data-board":"true"},svg);
+      for(const z of project.zones??[]){
+        const b=z.bounds,color=z.layer==="top"?"#f0a06d":"#75a7f5";
+        const outline=node("rect",{x:b.xMin,y:-b.yMax,width:b.xMax-b.xMin,height:b.yMax-b.yMin,fill:"none",stroke:color,"stroke-width":.18,"stroke-dasharray":".55 .3","pointer-events":"none","data-zone":z.id,"data-zone-layer":z.layer},svg);
+        node("title",{},outline,z.id+" / "+z.net+" / unfilled "+z.layer+" zone");
+        label(svg,(b.xMin+b.xMax)/2,-b.yMax+.9,z.id+" "+z.net+" (未充填)",.8);
+      }
       const renderedRoutes=[];
       for(const route of project.routes??[]){
         try{

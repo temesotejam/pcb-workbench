@@ -4,6 +4,7 @@ import {splitManualProject} from "./mixed-route-export.js";
 // Whitelist the fields consumed by the renderer; never execute imported text.
 export function projectToCircuitPlan(project,catalog,{allowManual=false}={}){
   validateProject(project,catalog);
+  if(project.zones?.length)throw new Error("Copper zones cannot yet be exported; refusing to omit unfilled zones");
   if(project.routes?.length&&!allowManual)throw new Error("Manual PCB routes cannot yet be exported; refusing to substitute autorouting");
   const issues=inspectProject(project.routes?.length?{...project,routes:[]}:project,catalog).issues;
   if(issues.length)throw new Error("Logical design incomplete: "+issues.join("; "));

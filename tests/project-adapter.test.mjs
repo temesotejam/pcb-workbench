@@ -41,3 +41,13 @@ test("neutral engine names preserve explicit local GND/VCC and avoid alias colli
   assert.ok(!collision.aliases.has(p.nets[0].name));
   assert.equal(restoreEngineNetNames(collision.plan.nets.join(" "),collision.aliases),"PCBWB_INTERNAL_NET_2 GND");
 });
+
+test("zone drafts never disappear silently during conversion of either generic board",()=>{
+  for(const id of ["native-resistors","native-rc"]){
+    const p=read("../projects/"+id+"/native.json");
+    p.zones=[{id:"Z1",net:p.nets[0].name,layer:"bottom",clearance:.2,bounds:{xMin:-2,yMin:-2,xMax:2,yMax:2}}];
+    assert.throws(()=>projectToCircuitPlan(p,catalog),/Copper zones cannot yet be exported/);
+    assert.throws(()=>projectToCircuitPlan(p,catalog,{allowManual:true}),/Copper zones cannot yet be exported/);
+    p.zones=[];assert.equal(projectToCircuitPlan(p,catalog).orderReady,false);
+  }
+});
