@@ -1,4 +1,5 @@
 import {validateProject,inspectProject} from "../site/project-model.js";
+import {splitManualProject} from "./mixed-route-export.js";
 
 // Whitelist the fields consumed by the renderer; never execute imported text.
 export function projectToCircuitPlan(project,catalog,{allowManual=false}={}){
@@ -13,7 +14,7 @@ export function projectToCircuitPlan(project,catalog,{allowManual=false}={}){
     placements:project.components.map(c=>({name:c.ref,lcsc:c.lcsc,pcbX:c.pcb.x,pcbY:c.pcb.y,pcbRotation:c.pcb.rotation,schX:c.schematic.x,schY:c.schematic.y,schRotation:c.schematic.rotation})),
     nets:project.nets.map(n=>n.name),
     traces:project.nets.flatMap(n=>n.pins.map(pin=>({from:"."+pin.ref+" > .pin"+pin.pin,to:"net."+n.name}))),
-    ...(project.routes?.length?{manualProject:structuredClone(project)}:{}),
+    ...(project.routes?.length?{manualProject:structuredClone(project),mixedRouting:splitManualProject(project).automaticNets.length>0}:{}),
     orderReady:false
   };
 }

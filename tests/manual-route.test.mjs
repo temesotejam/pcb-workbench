@@ -232,3 +232,44 @@ test("graphical via rejects bad ring or hole, board-edge annulus and duplicate p
   assert.equal(routeDraftCopper({...b,waypoints:b.waypoints.slice(0,-1)}).layer,"top");
   assert.deepEqual(a.waypoints,[]);
 });
+
+
+import {splitManualProject,prepareMixedRouting,mixedManualSegmentBlocks} from "../scripts/mixed-route-export.js";
+test("mixed routing partitions complete manual nets and refuses incomplete touched nets",()=>{
+  const {p}=manualCase(),q={...p,routes:p.routes.slice(0,1)};
+  const result=splitManualProject(q);
+  assert.deepEqual(result.manual.nets,[p.nets[0]]);
+  assert.deepEqual(result.automaticNets,[p.nets[1].name]);
+  assert.equal(projectToCircuitPlan(q,catalog,{allowManual:true}).mixedRouting,true);
+  assert.equal(projectToCircuitPlan(p,catalog,{allowManual:true}).mixedRouting,false);
+  const partial={...q,nets:[{...q.nets[0],pins:[...q.nets[0].pins,{ref:"R3",pin:"1"}]},q.nets[1]]};
+  assert.throws(()=>splitManualProject(partial),/Manual net incomplete/);
+});
+test("mixed routing discards only identified manual-net copper and preserves untouched routes",()=>{
+  const {p,f,json,aliases}=manualCase(),q={...p,routes:p.routes.slice(0,1)},split=splitManualProject(q);
+  const wire=[{route_type:"wire",x:0,y:0,width:.2,layer:"top"},{route_type:"wire",x:1,y:0,width:.2,layer:"top"}];
+  const a={type:"pcb_trace",pcb_trace_id:"auto_manual",source_trace_id:"alias0R1",route:wire};
+  const b={type:"pcb_trace",pcb_trace_id:"auto_untouched",subcircuit_connectivity_map_key:"key_alias1",route:wire};
+  const input=[...json,a,b],before=JSON.stringify(input);
+  const {unrouted,retained}=prepareMixedRouting(input,split.automaticNets,aliases);
+  assert.deepEqual(unrouted,json);
+  assert.deepEqual(retained,[b]);
+  const compiled=[...injectManualRoutes(unrouted,split.manual,f,aliases),...retained];
+  assert.equal(compiled.filter(e=>e.type==="pcb_trace").length,2);
+  assert.deepEqual(compiled.at(-1),b);
+  assert.equal(JSON.stringify(input),before);
+  assert.throws(()=>prepareMixedRouting([...json,a],split.automaticNets,aliases),/no routed copper/);
+  for(const bad of [{...b,subcircuit_connectivity_map_key:"unknown"},{...b,source_trace_id:"alias0R1"},{...b,route:[...wire,{route_type:"via"}]},{...b,route:[wire[0],{...wire[1],layer:"bottom"}]}]){
+    assert.throws(()=>prepareMixedRouting([...json,a,bad],split.automaticNets,aliases));
+  }
+  assert.throws(()=>prepareMixedRouting([...input,{type:"pcb_via"}],split.automaticNets,aliases),/Unsupported standalone copper/);
+});
+test("mixed serialized net partition rejects missing or unidentified automatic copper",()=>{
+  const text='(net 1 "/SUPPLY") (net 2 "/RETURN") (net 3 "/UNKNOWN")';
+  const manual='(segment (net 1))',auto='(segment (net 2))';
+  const filter=b=>mixedManualSegmentBlocks(text,b,["SUPPLY"],["RETURN"]);
+  assert.deepEqual(filter([auto,manual]),[manual]);
+  assert.throws(()=>filter([manual]),/Missing serialized automatic net/);
+  assert.throws(()=>filter([manual,auto,'(segment (net 3))']),/Unexpected serialized mixed segment net/);
+  assert.throws(()=>filter([manual,auto,'(segment (net 99))']),/Unknown serialized mixed segment net/);
+});

@@ -12,6 +12,10 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
+### Mixed whole-net routing (development)
+
+- PR #13 passed both [build including Chromium](https://github.com/temesotejam/pcb-workbench/actions/runs/46083410925) and [independent manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46083410905), merged at e4050d5. New candidate: mixed routing by complete manual nets and untouched automatic nets. The existing engine proposes routes for all nets, its positively identified copper on manual nets is discarded, and exact manual routes are injected. Other nets retain wire-only copper. Partial manual nets, unknown trace identities, automatic vias or unknown serialized net IDs fail closed; actual manual segments and all via holes still require exact parity and independent DRC. Automatic routing does not yet consider manual copper as obstacles, so collisions can cause rejection, not automatic repair. Two generic mixed fixture boards added; CI pending. No production approval.
+
 ### Draft routing progress (development)
 
 - PR #12 passed [build](https://github.com/temesotejam/pcb-workbench/actions/runs/46077774469) and [manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46077774468), merged at 868d00d. Candidate: PCB ratlines now connect remaining draft connectivity groups only; removing a route restores the corresponding missing links. Only successfully rendered routes count, with no physical DRC claim. Added graph regression tests and a real Chromium interaction smoke test against the generated site (CI pending); no production approval.
