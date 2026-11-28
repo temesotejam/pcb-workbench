@@ -91,6 +91,18 @@ jobs:
           node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const p=JSON.parse(fs.readFileSync("tests/fixtures/obstacle-two-layer.json")); const r=JSON.parse(fs.readFileSync("dist-native/projects/native/obstacle-route-candidate.json")); assert.equal(r.candidates.length,1); assert.equal(r.candidate.name,"RETURN"); assert.ok(r.candidate.vias>=2 && r.candidate.vias%2===0); assert.deepEqual(r.project.routes.slice(0,p.routes.length),p.routes); assert.equal(r.orderReady,false); const summary=JSON.parse(fs.readFileSync("dist-native/projects/native/project.json")); assert.equal(summary.expectedViaDrills.length,r.candidate.vias); assert.ok(summary.expectedViaDrills.every(v=>v.drill===.3));'
           python3 scripts/fabricate.py dist-native dist-native/input-projects
           cp -r dist-native/projects/native obstacle-verification/obstacle-two-layer
+      - name: Verify multiple forced-via nets with optional reverse-order recovery
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PCBWB_OBSTACLE_ROUTER: '1'
+          PCBWB_OBSTACLE_TWO_LAYER: '1'
+          PCBWB_OBSTACLE_REVERSE_RETRY: '1'
+        run: |
+          set -euo pipefail
+          bun run build --project-json tests/fixtures/obstacle-two-layer-multi.json
+          node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const p=JSON.parse(fs.readFileSync("tests/fixtures/obstacle-two-layer-multi.json")); const r=JSON.parse(fs.readFileSync("dist-native/projects/native/obstacle-route-candidate.json")); assert.deepEqual(r.candidates.map(c=>c.name),["RETURN","RETURN_B"]); assert.ok(r.candidates.every(c=>c.vias>=2 && c.vias%2===0)); assert.deepEqual(r.project.routes.slice(0,p.routes.length),p.routes); assert.equal(r.project.routes.length,p.routes.length+2); assert.equal(r.orderReady,false); const s=JSON.parse(fs.readFileSync("dist-native/projects/native/project.json")); assert.equal(s.expectedViaDrills.length,r.candidates.reduce((n,c)=>n+c.vias,0)); assert.ok(s.expectedViaDrills.every(v=>v.drill===.3));'
+          python3 scripts/fabricate.py dist-native dist-native/input-projects
+          cp -r dist-native/projects/native obstacle-verification/obstacle-two-layer-multi
       - name: Upload draft manufacturing files and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
