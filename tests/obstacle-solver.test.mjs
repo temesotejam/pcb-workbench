@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {topSolverInput,validateTopResult,solveTopCandidate,solveTopCandidates,appendCandidate} from "../scripts/obstacle-solver.js";
+import {topSolverInput,validateTopResult,solveTopCandidate,solveTopCandidates,appendCandidate,twoLayerSolverInput,validateTwoLayerResult,solveTwoLayerCandidate} from "../scripts/obstacle-solver.js";
 const input={layerCount:2,minTraceWidth:.2,bounds:{minX:-5,maxX:5,minY:-5,maxY:5},connections:[{name:"RETURN",pointsToConnect:[{x:-4,y:0,layer:"top"},{x:4,y:0,layer:"top"}]}],obstacles:[{type:"rect",layers:["top"],center:{x:0,y:0},width:1,height:2,connectedTo:[]},{type:"rect",layers:["bottom"],center:{x:0,y:2},width:1,height:1,connectedTo:[]}]};
 const out=points=>({traces:[{type:"pcb_trace",route:points.map(([x,y])=>({route_type:"wire",x,y,width:.2,layer:"top"}))}]});
 const detour=out([[-4,0],[-2,2],[2,2],[4,0]]);
@@ -95,4 +95,37 @@ test("batch rejects a later crossing atomically and preflights unsupported nets"
  const invalid=structuredClone(batch);invalid.connections[1].pointsToConnect.push({x:1,y:1,layer:"top"});
  assert.throws(()=>solveTopCandidates(invalid,Crossing),/distinct untouched/);
  assert.equal(calls,2);
+});
+
+const twoLayer={...input,obstacles:[{type:"rect",layers:["top"],center:{x:0,y:0},width:1,height:9,connectedTo:[]}]};
+const w=(x,layer,y=0)=>({route_type:"wire",x,y,width:.2,layer});
+const v=(x,from_layer,to_layer,y=0)=>({route_type:"via",x,y,from_layer,to_layer});
+const crossing=[w(-4,"top"),w(-2,"top"),v(-2,"top","bottom"),w(-2,"bottom"),w(2,"bottom"),v(2,"bottom","top"),w(2,"top"),w(4,"top")];
+const trace=route=>({traces:[{type:"pcb_trace",route}]});
+test("two-layer candidate preserves exact transitions and explicit via dimensions",()=>{
+ const before=JSON.stringify(twoLayer),prepared=twoLayerSolverInput(twoLayer);
+ assert.equal(prepared.layerCount,2);assert.equal(prepared.minViaDiameter,.6);
+ const candidate=validateTwoLayerResult(twoLayer,trace(crossing));
+ assert.deepEqual(candidate,{name:"RETURN",width:.2,waypoints:[{x:-2,y:0,via:{diameter:.6,drill:.3}},{x:2,y:0,via:{diameter:.6,drill:.3}}],segments:3,vias:2});
+ const reversed=[...crossing].reverse().map(p=>p.route_type==="via"?{...p,from_layer:p.to_layer,to_layer:p.from_layer}:p);
+ assert.deepEqual(validateTwoLayerResult(twoLayer,trace(reversed)),candidate);
+ const project={nets:[{name:"RETURN",pins:[{ref:"R1",pin:"2"},{ref:"R2",pin:"2"}]}],routes:[]};
+ assert.deepEqual(appendCandidate(project,candidate).routes[0].waypoints,candidate.waypoints);
+ assert.equal(JSON.stringify(twoLayer),before);
+});
+test("two-layer validator rejects implicit layers, bottom obstruction and via-in-pad",()=>{
+ assert.throws(()=>validateTwoLayerResult(twoLayer,trace(crossing.filter(p=>p.route_type!=="via"))),/layer change/);
+ const bottom={type:"rect",layers:["bottom"],center:{x:0,y:0},width:1,height:1,connectedTo:[]};
+ assert.throws(()=>validateTwoLayerResult({...twoLayer,obstacles:[...twoLayer.obstacles,bottom]},trace(crossing)),/copper clearance on bottom/);
+ const viaPad={type:"rect",layers:["top"],center:{x:-2,y:0},width:.2,height:.2,connectedTo:["RETURN"]};
+ assert.throws(()=>validateTwoLayerResult({...twoLayer,obstacles:[...twoLayer.obstacles,viaPad]},trace(crossing)),/via copper clearance/);
+ const bad=structuredClone(crossing);bad[2].from_layer="bottom";
+ assert.throws(()=>validateTwoLayerResult(twoLayer,trace(bad)),/unsupported two-layer geometry/);
+});
+test("two-layer mode retains bottom obstacles and invokes the existing solver",()=>{
+ const p=structuredClone(twoLayer);
+ p.obstacles.push({type:"rect",layers:["bottom"],center:{x:0,y:2},width:1,height:1,connectedTo:[]});
+ class Good{constructor(prepared){assert.equal(prepared.layerCount,2);assert.equal(prepared.obstacles.length,2)}step(){this.solved=true}getOutputSimpleRouteJson(){return trace(crossing)}}
+ assert.equal(solveTwoLayerCandidate(p,Good).vias,2);
+ assert.throws(()=>twoLayerSolverInput({...p,layerCount:4}),/exactly two/);
 });
