@@ -28,7 +28,7 @@ jobs:
       - name: Install circuit engine
         run: bun install
       - name: Catalog and local agent tests
-        run: bun test library/catalog.test.ts library/handoff-core.test.ts library/native-patch.test.ts && node --test agent/engine.test.mjs agent/bridge.test.mjs tests/project-model.test.mjs tests/project-adapter.test.mjs tests/editor-geometry.test.mjs tests/footprint-preview.test.mjs tests/manual-route.test.mjs
+        run: bun test library/catalog.test.ts library/handoff-core.test.ts library/native-patch.test.ts && node --test agent/engine.test.mjs agent/bridge.test.mjs tests/project-model.test.mjs tests/project-adapter.test.mjs tests/editor-geometry.test.mjs tests/footprint-preview.test.mjs tests/manual-route.test.mjs tests/obstacle-solver.test.mjs
       - name: Generate circuit and KiCad sources
         run: bun run build
       - name: Install pinned browser test runner
