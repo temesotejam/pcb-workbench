@@ -214,6 +214,7 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{},routing=null
     if(view==="pcb"){
       const {width,height}=project.board;
       node("rect",{x:-width/2,y:-height/2,width,height,fill:"#16332e",stroke:"#61d1b3","stroke-width":.16,"data-board":"true"},svg);
+      const renderedRoutes=[];
       for(const route of project.routes??[]){
         try{
           const copper=routeCopper(project,footprints,route);
@@ -228,12 +229,13 @@ export function attachGraphicEditor(svg,view,onEdit,onStatus=()=>{},routing=null
             node("title",{},ring,route.id+" / "+route.net+" / through-via");
             node("circle",{cx:p.x,cy:p.y,r:via.drill/2,fill:"#16332e","pointer-events":"none"},svg);
           }
+          renderedRoutes.push(route);
         }catch{/* unavailable route is reported in the route table */}
       }
       const byRef=new Map(project.components.map(c=>[c.ref,c]));
-      for(const link of pcbPadLinks(project,footprints)){
+      for(const link of pcbPadLinks(project,footprints,renderedRoutes)){
         const a=padPoint(byRef.get(link.from.ref).pcb,link.from.pad),b=padPoint(byRef.get(link.to.ref).pcb,link.to.pad);
-        const line=node("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,stroke:"#f0c780","stroke-width":.12,"stroke-dasharray":".45 .3","pointer-events":"none"},svg);
+        const line=node("line",{x1:a.x,y1:a.y,x2:b.x,y2:b.y,"data-ratline":link.name,stroke:"#f0c780","stroke-width":.12,"stroke-dasharray":".45 .3","pointer-events":"none"},svg);
         edges.push({...link,line});
       }
     }

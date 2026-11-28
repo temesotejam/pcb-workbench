@@ -28,16 +28,44 @@ export function padPoint(position,pad){
   return {x:clean(position.x+pad.x*c-pad.y*s),y:clean(-(position.y+pad.x*s+pad.y*c))};
 }
 // No center-based fallback: absence of a verified geometry is visibly incomplete.
-export function pcbPadLinks(project,footprints){
+// Only routes successfully rendered by the caller count as draft connectivity.
+// This is graph bookkeeping, NOT physical clearance/short/continuity verification.
+export function pcbPadLinks(project,footprints,renderedRoutes=[]){
   const byRef=new Map(project.components.map(c=>[c.ref,c]));
   const links=[];
+  const key=p=>p.ref+":"+p.pin;
+  const byNet=new Map();
+  for(const route of renderedRoutes){
+    if(!byNet.has(route.net))byNet.set(route.net,[]);
+    byNet.get(route.net).push(route);
+  }
   for(const net of project.nets){
     const endpoints=net.pins.map(p=>{
       const component=byRef.get(p.ref),pad=footprints?.parts?.[component?.lcsc]?.pads?.find(q=>q.pin===p.pin);
       return pad?{...p,pad}:null;
     });
     if(endpoints.some(p=>!p))continue;
-    for(let i=1;i<endpoints.length;i++)links.push({name:net.name,from:endpoints[0],to:endpoints[i]});
+    if(endpoints.length<2)continue;
+    const parent=new Map(endpoints.map(p=>[key(p),key(p)]));
+    const find=id=>{
+      let root=id;
+      while(parent.get(root)!==root)root=parent.get(root);
+      while(id!==root){const next=parent.get(id);parent.set(id,root);id=next}
+      return root;
+    };
+    for(const route of byNet.get(net.name)??[]){
+      const a=key(route.from),b=key(route.to);
+      if(parent.has(a)&&parent.has(b))parent.set(find(b),find(a));
+    }
+    // Draw one link between each distinct routed group, retaining the stable
+    // net pin order. Avoid implying that an unrenderable route is connected.
+    const groups=new Map();
+    for(const endpoint of endpoints){
+      const root=find(key(endpoint));
+      if(!groups.has(root))groups.set(root,endpoint);
+    }
+    const reps=[...groups.values()];
+    for(let i=1;i<reps.length;i++)links.push({name:net.name,from:reps[0],to:reps[i]});
   }
   return links;
 }
