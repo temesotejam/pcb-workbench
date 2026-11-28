@@ -9,10 +9,33 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from http.server import HTTPServer
 import zipfile
-from scripts.manufacturing_server import API, FILES, Rejected, bundle, make_handler
+from scripts.manufacturing_server import API, FILES, Rejected, audit_gerber_archive, bundle, make_handler
+
+
+def gerber_zip(entries):
+    result = io.BytesIO()
+    with zipfile.ZipFile(result, 'w') as archive:
+        for name, content in entries:
+            archive.writestr(name, content)
+    result.seek(0)
+    return result
 
 
 class ManufacturingServerTests(unittest.TestCase):
+    def test_accepts_protel_and_standard(self):
+        for top, edge in [('board.gtl','board.gko'), ('board-F_Cu.gbr','board-Edge_Cuts.gbr')]:
+            with self.subTest(top=top):
+                audit_gerber_archive(gerber_zip([(top,b'%TF.FileFunction,Copper,L1,Top*%'),(edge,b'outline')]))
+
+    def test_rejects_missing_wrong_or_unsafe(self):
+        top = ('board.gtl',b'%TF.FileFunction,Copper,L1,Top*%')
+        edge = ('board.gko',b'outline')
+        for entries in [[top], [edge], [('board.gtl',b'not copper'),edge], [top,edge,('../other',b'x')], [top,edge,('empty',b'')]]:
+            with self.subTest(entries=entries), self.assertRaises(Rejected):
+                audit_gerber_archive(gerber_zip(entries))
+        with self.assertRaises(Rejected):
+            audit_gerber_archive(io.BytesIO(b'not zip'))
+
     def test_bundle_exact_source_and_allowlist(self):
         source = b'{"schemaVersion":1}'
         with tempfile.TemporaryDirectory() as directory:
@@ -23,11 +46,17 @@ class ManufacturingServerTests(unittest.TestCase):
             (board / "validation.json").write_text('{"orderReady":false}')
             for name in FILES:
                 (draft / name).write_text(name)
+            (draft / "Gerber.zip").write_bytes(gerber_zip([("board.gtl",b"%TF.FileFunction,Copper,L1,Top*%"),("board.gko",b"outline")]).getvalue())
             (draft / "unexpected").write_text("not exported")
             with zipfile.ZipFile(io.BytesIO(bundle(board, source))) as archive:
                 self.assertEqual(set(archive.namelist()), set(FILES) | {"source-project.json","source-sha256.txt"})
                 self.assertEqual(archive.read("source-project.json"), source)
                 self.assertEqual(archive.read("source-sha256.txt").decode().strip(), hashlib.sha256(source).hexdigest())
+            valid = (draft / "Gerber.zip").read_bytes()
+            (draft / "Gerber.zip").write_bytes(b"invalid archive")
+            with self.assertRaises(Rejected):
+                bundle(board, source)
+            (draft / "Gerber.zip").write_bytes(valid)
             (draft / "CPL.csv").unlink()
             with self.assertRaises(Rejected):
                 bundle(board, source)

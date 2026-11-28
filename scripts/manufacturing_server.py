@@ -42,6 +42,35 @@ def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def audit_gerber_archive(path):
+    """Check the delivery archive, not the physical design (KiCad does that)."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = archive.infolist()
+            names = [entry.filename for entry in entries]
+            if (not entries or len(names) != len(set(names))
+                    or any(entry.is_dir() or '/' in entry.filename or '\\' in entry.filename
+                           or entry.filename in ('.', '..') or not entry.file_size for entry in entries)
+                    or sum(entry.file_size for entry in entries) > MAX_RESULT):
+                raise Rejected("Invalid Gerber archive contents")
+            # KiCad can use Protel extensions instead of .gbr. Identify top
+            # copper using the X2 file-function attribute.
+            top = False
+            outline = False
+            for name in names:
+                lower = name.lower()
+                suffix = Path(lower).suffix
+                if suffix in ('.gtl', '.gbr'):
+                    data = archive.read(name)
+                    top |= b'TF.FileFunction,Copper,L1,Top' in data
+                if suffix == '.gko' or 'edge_cuts' in lower or 'edge.cuts' in lower:
+                    outline = True
+            if not top or not outline or archive.testzip() is not None:
+                raise Rejected("Missing or corrupt top copper/outline Gerber output")
+    except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+        raise Rejected("Invalid Gerber ZIP") from exc
+
+
 def bundle(board, source):
     summary = read_json(board / "project.json")
     validation = read_json(board / "validation.json")
@@ -53,6 +82,7 @@ def bundle(board, source):
         raise Rejected("Incomplete draft")
     if sum(p.stat().st_size for p in paths) + len(source) > MAX_RESULT:
         raise Rejected("Draft exceeds size limit")
+    audit_gerber_archive(board / "draft" / "Gerber.zip")
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in paths:
