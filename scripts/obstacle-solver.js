@@ -1,5 +1,5 @@
 // Conservative draft adapter for the pinned MIT capacity-autorouter.
-// Sequential untouched two-terminal top nets, constant width, no automatic vias.
+// Sequential untouched two-terminal top-pad nets; opt-in audited through-vias.
 import {copperObstacles} from "./autorouter-input.js";
 const clearance=.2, edge=.5, eps=1e-6;
 const near=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y)<=eps;
@@ -122,7 +122,13 @@ export function validateTwoLayerResult(input,output){
   let route=output.traces[0].route;
   const wire=p=>p?.route_type==="wire"&&["top","bottom"].includes(p.layer)&&[p.x,p.y,p.width].every(Number.isFinite)&&p.width>=input.minTraceWidth-eps&&p.width<=5;
   const via=p=>p?.route_type==="via"&&[p.x,p.y].every(Number.isFinite)&&["top","bottom"].includes(p.from_layer)&&["top","bottom"].includes(p.to_layer)&&p.from_layer!==p.to_layer;
-  if(!Array.isArray(route)||route.length<2||route.length>306||!wire(route[0])||!wire(route.at(-1))||route[0].layer!=="top"||route.at(-1).layer!=="top"||route.some(p=>!wire(p)&&!via(p)))fail("unsupported two-layer geometry");
+  // Report the actual rejected token, not just a generic error. Keep the
+  // accepted route contract and all physical checks unchanged.
+  if(!Array.isArray(route)||route.length<2||route.length>306)fail("unsupported two-layer geometry: route length "+(Array.isArray(route)?route.length:"not an array"));
+  const describe=(p,index)=>({index,route_type:p?.route_type,layer:p?.layer,from_layer:p?.from_layer,to_layer:p?.to_layer,x:p?.x,y:p?.y,width:p?.width,via_diameter:p?.via_diameter,diameter:p?.diameter,keys:p&&typeof p==="object"?Object.keys(p):[]});
+  const invalid=route.findIndex(p=>!wire(p)&&!via(p));
+  if(invalid!==-1)fail("unsupported two-layer geometry: invalid token "+JSON.stringify(describe(route[invalid],invalid)));
+  if(!wire(route[0])||!wire(route.at(-1))||route[0].layer!=="top"||route.at(-1).layer!=="top")fail("unsupported two-layer geometry: invalid terminals "+JSON.stringify([describe(route[0],0),describe(route.at(-1),route.length-1)]));
   const width=route[0].width;
   if(route.some(p=>wire(p)&&Math.abs(p.width-width)>eps))fail("variable width");
   const owns=(terminal,p)=>{
@@ -200,4 +206,32 @@ export function solveTwoLayerCandidate(input,Solver,deadline=Date.now()+30000){
   }
   if(solver.failed||!solver.solved)fail("solver failed: "+String(solver.error??"unknown"));
   return validateTwoLayerResult(input,solver.getOutputSimpleRouteJson());
+}
+
+ // Experimental two-layer batch; use the same per-net physical audit and
+ // treat each previously accepted track and via as foreign copper.
+export function solveTwoLayerCandidates(input,Solver){
+  const connections=input.connections;
+  if(input.layerCount!==2||!Array.isArray(connections)||connections.length<1||connections.length>8||
+    new Set(connections.map(c=>c.name)).size!==connections.length||
+    connections.some(c=>typeof c.name!=="string"||!c.name||!Array.isArray(c.pointsToConnect)||c.pointsToConnect.length!==2||c.pointsToConnect.some(p=>p.layer!=="top"||![p.x,p.y].every(Number.isFinite))))fail("requires exactly two layers and 1–8 distinct untouched two-terminal top nets");
+  const working=structuredClone(input),candidates=[],deadline=Date.now()+30000;
+  for(const connection of working.connections){
+    const candidate=solveTwoLayerCandidate({...working,connections:[connection]},Solver,deadline);
+    const points=[connection.pointsToConnect[0],...candidate.waypoints,connection.pointsToConnect[1]];
+    let layer="top";
+    const segments=[],vias=[];
+    for(let i=1;i<points.length;i++){
+      const from=points[i-1],to=points[i];
+      segments.push({from,to,width:candidate.width,layer});
+      if(to.via){
+        vias.push({x:to.x,y:to.y,...to.via});
+        layer=layer==="top"?"bottom":"top";
+      }
+    }
+    if(layer!=="top")fail("batch route must return to top");
+    working.obstacles.push(...copperObstacles({segments,vias}));
+    candidates.push(candidate);
+  }
+  return candidates;
 }
