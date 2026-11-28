@@ -274,6 +274,8 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
     const obstacleMode=process.env.PCBWB_OBSTACLE_ROUTER==="1"&&Boolean(mixed)
     const twoLayerMode=process.env.PCBWB_OBSTACLE_TWO_LAYER==="1"
     if(twoLayerMode&&!obstacleMode)throw new Error("Two-layer obstacle mode requires opt-in mixed routing")
+    const retryReverse=process.env.PCBWB_OBSTACLE_REVERSE_RETRY==="1"
+    if(retryReverse&&!twoLayerMode)throw new Error("Reverse retry requires opt-in two-layer routing")
     if(plan?.manualProject&&engine){
       const parts:Record<string,unknown>={}
       for(const lcsc of new Set<string>(plan.manualProject.components.map((c:any)=>c.lcsc))){
@@ -286,7 +288,7 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
         await writeFile(resolve(path,"autorouter-input.json"),JSON.stringify(routingInput,null,2));result.files.push("autorouter-input.json")
         if(obstacleMode){
           const {AutoroutingPipelineSolver}=await import("pcbwb-capacity-autorouter")
-          const candidates=twoLayerMode?solveTwoLayerCandidates(routingInput,AutoroutingPipelineSolver):solveTopCandidates(routingInput,AutoroutingPipelineSolver)
+          const candidates=twoLayerMode?solveTwoLayerCandidates(routingInput,AutoroutingPipelineSolver,{retryReverse}):solveTopCandidates(routingInput,AutoroutingPipelineSolver)
           compiledManualProject=candidates.reduce((project,candidate)=>appendCandidate(project,candidate),plan.manualProject)
           projectToCircuitPlan(compiledManualProject,catalog,{allowManual:true})
           result.expectedViaDrills=compiledManualProject.routes.flatMap((r:any)=>r.waypoints.filter((p:any)=>p.via).map((p:any)=>({x:p.x,y:p.y,drill:p.via.drill})))
