@@ -101,6 +101,7 @@ def run():
             expect(ratlines).to_have_count(0)
             project = saved()
             assert len(project["routes"]) == 1
+            expect(page.locator("#copper-diagnostics")).to_contain_text("仮配線同士の検査: 0 件")
             assert project["routes"][0]["waypoints"] == [
                 {"x": -2, "y": 2, "via": {"diameter": .8, "drill": .4}},
                 {"x": 2, "y": 2, "via": {"diameter": .8, "drill": .4}},
@@ -122,6 +123,27 @@ def run():
                 page.locator("#import").set_input_files(path)
                 expect(ratlines).to_have_count(0)
                 assert saved() == project
+            # A deliberately crossing pair of top tracks, loaded only into this
+            # temporary browser context, must be reported without changing it.
+            crossed = json.loads(json.dumps(project))
+            crossed["nets"] = [
+                {"name":"A","pins":[{"ref":"R1","pin":"1"},{"ref":"R2","pin":"2"}]},
+                {"name":"B","pins":[{"ref":"R1","pin":"2"},{"ref":"R2","pin":"1"}]},
+            ]
+            crossed["routes"] = [
+                {"id":"T1","net":"A","layer":"top","width":.25,
+                 "from":{"ref":"R1","pin":"1"},"to":{"ref":"R2","pin":"2"},
+                 "waypoints":[{"x":0,"y":2},{"x":0,"y":-2}]},
+                {"id":"T2","net":"B","layer":"top","width":.25,
+                 "from":{"ref":"R1","pin":"2"},"to":{"ref":"R2","pin":"1"},"waypoints":[]},
+            ]
+            page.evaluate("([key, p]) => localStorage.setItem(key, JSON.stringify(p))", [KEY, crossed])
+            page.reload()
+            expect(page.locator("#controls")).to_be_visible()
+            expect(page.locator("#copper-diagnostics")).to_contain_text("銅箔接触・重なり")
+            assert saved() == crossed
+            page.locator("#routes").get_by_role("button", name="削除").first.click()
+            expect(page.locator("#copper-diagnostics")).to_contain_text("仮配線同士の検査: 0 件")
             assert not errors, errors
             context.close()
             browser.close()
