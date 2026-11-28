@@ -17,6 +17,7 @@
     "polygon-clipping": "0.15.7",
     "easyeda": "0.0.392",
     "fflate": "0.8.2",
-    "esbuild": "0.25.12"
+    "esbuild": "0.25.12",
+    "pcbwb-capacity-autorouter": "npm:@tscircuit/capacity-autorouter@0.0.783"
   }
 }
