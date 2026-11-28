@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from http.server import HTTPServer
 import zipfile
-from scripts.manufacturing_server import API, FILES, Rejected, audit_gerber_archive, audit_assembly_delivery, stage_diagnostic, bundle, make_handler, hosted_password
+from scripts.manufacturing_server import API, FILES, Rejected, audit_gerber_archive, audit_assembly_delivery, stage_diagnostic, bundle, make_handler, hosted_password, BoundedHTTPServer
 
 
 def gerber_zip(entries):
@@ -200,3 +200,85 @@ class ManufacturingServerTests(unittest.TestCase):
                 finally:
                     server.shutdown()
                     thread.join()
+
+    def test_busy_manufacturing_keeps_editor_responsive_and_recovers(self):
+        from concurrent.futures import ThreadPoolExecutor
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+        def runner(source):
+            calls.append(source)
+            if source == b"first":
+                entered.set()
+                if not release.wait(10):
+                    raise Rejected("Test wait expired")
+            elif source == b"bad":
+                raise Rejected("DRC failed")
+            return b"zip"
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "editor.html").write_text("editor")
+            with BoundedHTTPServer(("127.0.0.1", 0), make_handler("http://unused", directory, runner)) as server:
+                origin = "http://127.0.0.1:" + str(server.server_port)
+                server.RequestHandlerClass = make_handler(origin, directory, runner)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                def post(body):
+                    with urlopen(Request(origin + API, body, {"Origin":origin,
+                                 "Content-Type":"application/json"}), timeout=3) as response:
+                        return response.read()
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    first = executor.submit(post, b"first")
+                    try:
+                        self.assertTrue(entered.wait(2))
+                        with urlopen(origin + "/editor.html", timeout=2) as response:
+                            self.assertEqual(response.read(), b"editor")
+                        with self.assertRaises(HTTPError) as error:
+                            post(b"second")
+                        self.assertEqual(error.exception.code, 503)
+                        self.assertFalse(json.load(error.exception)["orderReady"])
+                        self.assertEqual(calls, [b"first"])
+                        release.set()
+                        self.assertEqual(first.result(timeout=3), b"zip")
+                        with self.assertRaises(HTTPError) as error:
+                            post(b"bad")
+                        self.assertEqual(error.exception.code, 422)
+                        self.assertEqual(post(b"third"), b"zip")
+                        self.assertEqual(calls, [b"first", b"bad", b"third"])
+                    finally:
+                        release.set()
+                        server.shutdown()
+                        thread.join()
+
+    def test_connection_limit_does_not_start_an_extra_request_thread(self):
+        from concurrent.futures import ThreadPoolExecutor
+        entered, release = threading.Event(), threading.Event()
+        calls = []
+        def runner(source):
+            calls.append(source)
+            entered.set()
+            if not release.wait(10):
+                raise Rejected("Test wait expired")
+            return b"zip"
+        with tempfile.TemporaryDirectory() as directory:
+            with BoundedHTTPServer(("127.0.0.1", 0), make_handler("http://unused", directory, runner),
+                                   max_connections=1) as server:
+                origin = "http://127.0.0.1:" + str(server.server_port)
+                server.RequestHandlerClass = make_handler(origin, directory, runner)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                def post():
+                    with urlopen(Request(origin + API, b"{}", {"Origin":origin,
+                                 "Content-Type":"application/json"}), timeout=3) as response:
+                        return response.read()
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    first = executor.submit(post)
+                    try:
+                        self.assertTrue(entered.wait(2))
+                        with self.assertRaises(OSError):
+                            post()
+                        self.assertEqual(calls, [b"{}"])
+                        release.set()
+                        self.assertEqual(first.result(timeout=3), b"zip")
+                    finally:
+                        release.set()
+                        server.shutdown()
+                        thread.join()
