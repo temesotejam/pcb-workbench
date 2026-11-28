@@ -69,3 +69,15 @@ export function restoreEngineNetNames(text,aliases){
   const pattern=new RegExp("\\b(?:"+[...aliases.keys()].join("|")+")\\b","g");
   return text.replace(pattern,alias=>aliases.get(alias));
 }
+
+// One policy controls both engine rendering and subsequent copper injection.
+export function nativeRoutingPolicy(plan, privateOutput, env){
+  const manual=Boolean(plan?.manualProject);
+  const mixed=manual&&Boolean(plan.mixedRouting);
+  const obstacleMode=(env.PCBWB_OBSTACLE_ROUTER==="1"||privateOutput)&&mixed;
+  const twoLayerMode=privateOutput?obstacleMode:env.PCBWB_OBSTACLE_TWO_LAYER==="1";
+  if(twoLayerMode&&!obstacleMode)throw new Error("Two-layer obstacle mode requires opt-in mixed routing");
+  const retryReverse=privateOutput?twoLayerMode:env.PCBWB_OBSTACLE_REVERSE_RETRY==="1";
+  if(retryReverse&&!twoLayerMode)throw new Error("Reverse retry requires opt-in two-layer routing");
+  return {routingDisabled:manual&&(!mixed||obstacleMode),obstacleMode,twoLayerMode,retryReverse};
+}

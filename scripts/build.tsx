@@ -5,7 +5,7 @@ import { cp, mkdir, readdir, readFile, writeFile, rm } from "node:fs/promises"
 import { resolve } from "node:path"
 import { resolveParts, assertSourceParity } from "../library/parts"
 import { jlcpcbFootprintResolver } from "../library/footprints"
-import { projectToCircuitPlan, planMetadata, neutralEnginePlan, restoreEngineNetNames } from "./project-adapter.js"
+import { projectToCircuitPlan, planMetadata, neutralEnginePlan, restoreEngineNetNames, nativeRoutingPolicy } from "./project-adapter.js"
 import { NativeDesign } from "./native-design"
 import catalog from "../library/catalog.json"
 import { normalizeFootprint } from "../site/footprint-preview.js"
@@ -272,17 +272,13 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
     const circuit=new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})
     const engine=plan?neutralEnginePlan(plan):null
     const restore=(text:string)=>engine?restoreEngineNetNames(text,engine.aliases):text
-    if(engine)circuit.add(<NativeDesign plan={engine.plan}/>)
+    const {routingDisabled,obstacleMode,twoLayerMode,retryReverse}=nativeRoutingPolicy(plan,Boolean(privateOutput),process.env)
+    if(engine)circuit.add(<NativeDesign plan={engine.plan} routingDisabled={routingDisabled}/>)
     else {const Design=(await import(resolve(dir,"design.tsx"))).default;circuit.add(<Design />)}
     await circuit.renderUntilSettled()
     let json=circuit.getCircuitJson()
     const mixed=plan?.manualProject&&plan.mixedRouting?splitManualProject(plan.manualProject):null
     let compiledManualProject=plan?.manualProject
-    const obstacleMode=(process.env.PCBWB_OBSTACLE_ROUTER==="1"||Boolean(privateOutput))&&Boolean(mixed)
-    const twoLayerMode=privateOutput?obstacleMode:process.env.PCBWB_OBSTACLE_TWO_LAYER==="1"
-    if(twoLayerMode&&!obstacleMode)throw new Error("Two-layer obstacle mode requires opt-in mixed routing")
-    const retryReverse=privateOutput?twoLayerMode:process.env.PCBWB_OBSTACLE_REVERSE_RETRY==="1"
-    if(retryReverse&&!twoLayerMode)throw new Error("Reverse retry requires opt-in two-layer routing")
     if(plan?.manualProject&&engine){
       const parts:Record<string,unknown>={}
       for(const lcsc of new Set<string>(plan.manualProject.components.map((c:any)=>c.lcsc))){
