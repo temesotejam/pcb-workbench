@@ -12,6 +12,8 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
+from socketserver import ThreadingMixIn
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlsplit
 import zipfile
@@ -20,8 +22,40 @@ ROOT = Path(__file__).resolve().parents[1]
 API = "/api/manufacture"
 MAX_INPUT = 2_000_000
 MAX_RESULT = 32 * 1024 * 1024
+MAX_CONNECTIONS = 8
 FILES = ("Gerber.zip", "BOM.csv", "CPL.csv", "DO_NOT_ORDER.txt",
          "validation.json", "erc.json", "drc.json")
+
+
+class BoundedHTTPServer(ThreadingMixIn, HTTPServer):
+    """Bound concurrent request threads; never queue unbounded work in Python."""
+    request_queue_size = MAX_CONNECTIONS
+    daemon_threads = False
+    block_on_close = True
+
+    def __init__(self, *args, max_connections=MAX_CONNECTIONS, **kwargs):
+        if max_connections < 1:
+            raise ValueError("max_connections must be positive")
+        self._slots = threading.BoundedSemaphore(max_connections)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            # A trusted proxy should apply connection/rate limits before this.
+            # Do not allocate another thread or parse an overloaded connection.
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
 
 class Rejected(Exception):
@@ -171,6 +205,7 @@ def hosted_password(origin, port, password):
 
 def make_handler(origin, static, runner=manufacture, password=None):
     authority = urlsplit(origin).netloc
+    manufacturing_slot = threading.BoundedSemaphore(1)
     expected = None if password is None else hashlib.sha256(
         base64.b64encode(("pcbwb:" + password).encode("ascii"))).digest()
 
@@ -251,7 +286,12 @@ def make_handler(origin, static, runner=manufacture, password=None):
                 source = self.rfile.read(size)
                 if len(source) != size:
                     return self.error_json(400, "Incomplete request")
-                result = runner(source)
+                if not manufacturing_slot.acquire(blocking=False):
+                    return self.error_json(503, "Another manufacturing job is running; retry later")
+                try:
+                    result = runner(source)
+                finally:
+                    manufacturing_slot.release()
             except Rejected as exc:
                 return self.error_json(422, str(exc))
             except (OSError, ValueError, KeyError, TypeError):
@@ -277,7 +317,7 @@ def main():
         parser.error(str(exc))
     if not (ROOT / "dist" / "editor.html").is_file():
         parser.error("Run bun run build first")
-    with HTTPServer(("127.0.0.1", args.port), make_handler(origin, ROOT / "dist", password=password)) as server:
+    with BoundedHTTPServer(("127.0.0.1", args.port), make_handler(origin, ROOT / "dist", password=password)) as server:
         print("Review-only service: " + origin + "/editor.html", flush=True)
         server.serve_forever()
 
