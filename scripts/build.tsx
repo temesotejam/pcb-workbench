@@ -12,7 +12,7 @@ import { normalizeFootprint } from "../site/footprint-preview.js"
 import { injectManualRoutes, verifyKicadManualSegments } from "./manual-route-export.js"
 import { splitManualProject, prepareMixedRouting, mixedManualSegmentBlocks } from "./mixed-route-export.js"
 import { buildMixedAutorouterInput } from "./autorouter-input.js"
-import { appendCandidate, solveTopCandidates } from "./obstacle-solver.js"
+import { appendCandidate, solveTopCandidates, solveTwoLayerCandidate } from "./obstacle-solver.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -272,6 +272,8 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
     const mixed=plan?.manualProject&&plan.mixedRouting?splitManualProject(plan.manualProject):null
     let compiledManualProject=plan?.manualProject
     const obstacleMode=process.env.PCBWB_OBSTACLE_ROUTER==="1"&&Boolean(mixed)
+    const twoLayerMode=process.env.PCBWB_OBSTACLE_TWO_LAYER==="1"
+    if(twoLayerMode&&!obstacleMode)throw new Error("Two-layer obstacle mode requires opt-in mixed routing")
     if(plan?.manualProject&&engine){
       const parts:Record<string,unknown>={}
       for(const lcsc of new Set<string>(plan.manualProject.components.map((c:any)=>c.lcsc))){
@@ -284,9 +286,10 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
         await writeFile(resolve(path,"autorouter-input.json"),JSON.stringify(routingInput,null,2));result.files.push("autorouter-input.json")
         if(obstacleMode){
           const {AutoroutingPipelineSolver}=await import("pcbwb-capacity-autorouter")
-          const candidates=solveTopCandidates(routingInput,AutoroutingPipelineSolver)
+          const candidates=twoLayerMode?[solveTwoLayerCandidate(routingInput,AutoroutingPipelineSolver)]:solveTopCandidates(routingInput,AutoroutingPipelineSolver)
           compiledManualProject=candidates.reduce((project,candidate)=>appendCandidate(project,candidate),plan.manualProject)
           projectToCircuitPlan(compiledManualProject,catalog,{allowManual:true})
+          result.expectedViaDrills=compiledManualProject.routes.flatMap((r:any)=>r.waypoints.filter((p:any)=>p.via).map((p:any)=>({x:p.x,y:p.y,drill:p.via.drill})))
           json=injectManualRoutes(unrouted,compiledManualProject,{parts},engine.aliases)
           await writeFile(resolve(path,"obstacle-route-candidate.json"),JSON.stringify({project:compiledManualProject,candidates,...(candidates.length===1?{candidate:candidates[0]}:{}),orderReady:false},null,2));result.files.push("obstacle-route-candidate.json")
           for(const candidate of candidates)console.log(id,"obstacle candidate",candidate.name,candidate.segments,"segments")
