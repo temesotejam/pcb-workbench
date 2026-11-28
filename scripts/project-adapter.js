@@ -1,6 +1,21 @@
 import {validateProject,inspectProject} from "../site/project-model.js";
 import {splitManualProject} from "./mixed-route-export.js";
 
+// Limit initial multi-zone support to separated rectangles. KiCad retains
+// responsibility for actual copper clearance, connectivity and fill.
+export function validateZoneSeparation(zones){
+  if(zones.length>16)throw new Error("Zone fill supports at most 16 rectangles");
+  for(let i=0;i<zones.length;i++)for(let j=0;j<i;j++){
+    const a=zones[i],b=zones[j];
+    if(a.layer!==b.layer)continue;
+    const dx=Math.max(0,a.bounds.xMin-b.bounds.xMax,b.bounds.xMin-a.bounds.xMax);
+    const dy=Math.max(0,a.bounds.yMin-b.bounds.yMax,b.bounds.yMin-a.bounds.yMax);
+    // Allow rounding at the six-decimal KiCad coordinate boundary only.
+    if(Math.hypot(dx,dy)+1e-6<Math.max(a.clearance,b.clearance))
+      throw new Error("Same-layer zones overlap or lack outline separation: "+a.id+" / "+b.id);
+  }
+}
+
 // Whitelist the fields consumed by the renderer; never execute imported text.
 export function projectToCircuitPlan(project,catalog,{allowManual=false,allowZones=false}={}){
   validateProject(project,catalog);
@@ -8,7 +23,7 @@ export function projectToCircuitPlan(project,catalog,{allowManual=false,allowZon
   if(project.routes?.length&&!allowManual)throw new Error("Manual PCB routes cannot yet be exported; refusing to substitute autorouting");
   const zones=project.zones?.length?structuredClone(project.zones):null;
   if(zones){
-    if(new Set(zones.map(z=>z.layer)).size!==zones.length)throw new Error("Zone fill supports one zone per outer layer");
+    validateZoneSeparation(zones);
     // Routing is still complete without zone copper; only the independent KiCad stage may fill it.
     project={...project,zones:[]};
   }
