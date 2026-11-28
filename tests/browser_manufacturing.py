@@ -1,6 +1,7 @@
 """Live Chromium download through the actual independent manufacturing service."""
 import hashlib
 import json
+import secrets
 import tempfile
 import threading
 import zipfile
@@ -15,13 +16,15 @@ KEY = "pcb-workbench.native-project.v1"
 def run():
     with HTTPServer(("127.0.0.1", 0), make_handler("http://unused", ROOT / "dist")) as server:
         origin = "http://127.0.0.1:" + str(server.server_port)
-        server.RequestHandlerClass = make_handler(origin, ROOT / "dist")
+        password = secrets.token_urlsafe(32)
+        server.RequestHandlerClass = make_handler(origin, ROOT / "dist", password=password)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
             with sync_playwright() as p, tempfile.TemporaryDirectory() as directory:
                 browser = p.chromium.launch()
-                context = browser.new_context(accept_downloads=True)
+                context = browser.new_context(accept_downloads=True, http_credentials={
+                    "username":"pcbwb", "password":password, "origin":origin})
                 page = context.new_page()
                 errors, downloads = [], []
                 page.on("pageerror", lambda error: errors.append(str(error)))
