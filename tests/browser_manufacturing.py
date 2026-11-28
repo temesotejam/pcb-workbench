@@ -5,16 +5,15 @@ import secrets
 import tempfile
 import threading
 import zipfile
-from http.server import HTTPServer
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
-from scripts.manufacturing_server import API, FILES, ROOT, make_handler
+from scripts.manufacturing_server import API, FILES, ROOT, make_handler, BoundedHTTPServer
 
 KEY = "pcb-workbench.native-project.v1"
 
 
 def run():
-    with HTTPServer(("127.0.0.1", 0), make_handler("http://unused", ROOT / "dist")) as server:
+    with BoundedHTTPServer(("127.0.0.1", 0), make_handler("http://unused", ROOT / "dist")) as server:
         origin = "http://127.0.0.1:" + str(server.server_port)
         password = secrets.token_urlsafe(32)
         server.RequestHandlerClass = make_handler(origin, ROOT / "dist", password=password)
