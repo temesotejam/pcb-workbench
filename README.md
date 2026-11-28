@@ -12,6 +12,10 @@ AI-assisted, browser-first PCB design and manufacturing workspace for JLCPCB, wi
 - [Roadmap](docs/ROADMAP.md): implementation status and release gates.\n- [JLCPCB export guide](docs/JLCPCB-EXPORT.md): native review-bundle generation, file contents and manufacturing acceptance gates.
 - [NUCLEO handoff audit](docs/NUCLEO-HANDOFF-AUDIT.md): source integrity, board facts and PCBA blockers.
 
+### Draft copper clearance feedback (development)
+
+- 2026-11-28: PR #14 passed [build/Chromium](https://github.com/temesotejam/pcb-workbench/actions/runs/46093891200) and [independent manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46093891224), merged at c2905f0. New candidate: browser advisory different-net clearance scan for manual track capsules and through-via outer copper disks, layer-aware and configurable (0.2 mm reference default, not a fabrication profile). Bounded scan reports incomplete, never certifies pads, holes, board rules or connectivity; no changes to export gates. Added Node and Chromium regressions; CI pending. Next: integrate existing MIT capacity-autorouter obstacle input, copper zones, and browser-accessible manufacturing. No production approval.
+
 ### Mixed whole-net routing (development)
 
 - 2026-11-28: PR #14 initial [build/Chromium](https://github.com/temesotejam/pcb-workbench/actions/runs/46089329590) passed; [manufacturing](https://github.com/temesotejam/pcb-workbench/actions/runs/46089329582) failed with KeyError layers on the first mixed fixture after both mixed boards passed serialized route parity. Root cause: native build derived the correct layer profile but fabrication re-read the lightweight fixture manifest. Persist effective fabricationLayers in the board's build summary, consume it with validation and preserve explicit legacy fallback; missing/malformed profiles block and remove stale drafts with diagnostics. Added unit regressions; rerun independent verification before merging. No DRC gate relaxed or production approval.
