@@ -12,7 +12,7 @@ import { normalizeFootprint } from "../site/footprint-preview.js"
 import { injectManualRoutes, verifyKicadManualSegments } from "./manual-route-export.js"
 import { splitManualProject, prepareMixedRouting, mixedManualSegmentBlocks } from "./mixed-route-export.js"
 import { buildMixedAutorouterInput } from "./autorouter-input.js"
-import { appendCandidate, solveTopCandidates, solveTwoLayerCandidate } from "./obstacle-solver.js"
+import { appendCandidate, solveTopCandidates, solveTwoLayerCandidates } from "./obstacle-solver.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -286,7 +286,7 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
         await writeFile(resolve(path,"autorouter-input.json"),JSON.stringify(routingInput,null,2));result.files.push("autorouter-input.json")
         if(obstacleMode){
           const {AutoroutingPipelineSolver}=await import("pcbwb-capacity-autorouter")
-          const candidates=twoLayerMode?[solveTwoLayerCandidate(routingInput,AutoroutingPipelineSolver)]:solveTopCandidates(routingInput,AutoroutingPipelineSolver)
+          const candidates=twoLayerMode?solveTwoLayerCandidates(routingInput,AutoroutingPipelineSolver):solveTopCandidates(routingInput,AutoroutingPipelineSolver)
           compiledManualProject=candidates.reduce((project,candidate)=>appendCandidate(project,candidate),plan.manualProject)
           projectToCircuitPlan(compiledManualProject,catalog,{allowManual:true})
           result.expectedViaDrills=compiledManualProject.routes.flatMap((r:any)=>r.waypoints.filter((p:any)=>p.via).map((p:any)=>({x:p.x,y:p.y,drill:p.via.drill})))
