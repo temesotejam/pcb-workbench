@@ -120,7 +120,13 @@ export function validateTwoLayerResult(input,output){
   const prepared=twoLayerSolverInput(input),connection=input.connections[0],[a,b]=connection.pointsToConnect;
   if(!Array.isArray(output?.traces)||output.traces.length!==1||output.traces[0].type!=="pcb_trace")fail("expected exactly one trace");
   let route=output.traces[0].route;
-  const wire=p=>p?.route_type==="wire"&&["top","bottom"].includes(p.layer)&&[p.x,p.y,p.width].every(Number.isFinite)&&p.width>=input.minTraceWidth-eps&&p.width<=5;
+  // The pinned solver can emit its default 0.15 mm on two-layer paths even
+  // when the requested minimum is 0.2 mm. Treat its path as geometry only:
+  // widen a uniform candidate to the requested minimum, then independently
+  // audit every segment at the actual exported width. Never accept a thinner
+  // trace, variable widths, or bypass clearance/edge/via checks.
+  if(!Number.isFinite(input.minTraceWidth)||input.minTraceWidth<=0||input.minTraceWidth>5)fail("invalid minimum trace width");
+  const wire=p=>p?.route_type==="wire"&&["top","bottom"].includes(p.layer)&&[p.x,p.y,p.width].every(Number.isFinite)&&p.width>0&&p.width<=5;
   const via=p=>p?.route_type==="via"&&[p.x,p.y].every(Number.isFinite)&&["top","bottom"].includes(p.from_layer)&&["top","bottom"].includes(p.to_layer)&&p.from_layer!==p.to_layer;
   // Report the actual rejected token, not just a generic error. Keep the
   // accepted route contract and all physical checks unchanged.
@@ -129,8 +135,9 @@ export function validateTwoLayerResult(input,output){
   const invalid=route.findIndex(p=>!wire(p)&&!via(p));
   if(invalid!==-1)fail("unsupported two-layer geometry: invalid token "+JSON.stringify(describe(route[invalid],invalid)));
   if(!wire(route[0])||!wire(route.at(-1))||route[0].layer!=="top"||route.at(-1).layer!=="top")fail("unsupported two-layer geometry: invalid terminals "+JSON.stringify([describe(route[0],0),describe(route.at(-1),route.length-1)]));
-  const width=route[0].width;
-  if(route.some(p=>wire(p)&&Math.abs(p.width-width)>eps))fail("variable width");
+  const solverWidth=route[0].width;
+  if(route.some(p=>wire(p)&&Math.abs(p.width-solverWidth)>eps))fail("variable width");
+  const width=Math.max(input.minTraceWidth,solverWidth);
   const owns=(terminal,p)=>{
     if(near(terminal,p))return true;
     const pads=input.obstacles.filter(o=>o.layers.includes("top")&&o.connectedTo.includes(connection.name)&&near(o.center,terminal));

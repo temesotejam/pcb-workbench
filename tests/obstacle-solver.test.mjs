@@ -134,8 +134,8 @@ test("two-layer shape failure identifies the actual rejected token and terminal"
  const malformed=structuredClone(crossing);
  malformed[2].to_layer="inner1";
  assert.throws(()=>validateTwoLayerResult(twoLayer,trace(malformed)),/invalid token.*"index":2.*"to_layer":"inner1"/);
- const wrongWidth=structuredClone(crossing);wrongWidth[1].width=.1;
- assert.throws(()=>validateTwoLayerResult(twoLayer,trace(wrongWidth)),/invalid token.*"index":1.*"width":0.1/);
+ const wrongWidth=structuredClone(crossing);wrongWidth[1].width=0;
+ assert.throws(()=>validateTwoLayerResult(twoLayer,trace(wrongWidth)),/invalid token.*"index":1.*"width":0/);
  const wrongTerminal=structuredClone(crossing);wrongTerminal[0].layer="bottom";
  assert.throws(()=>validateTwoLayerResult(twoLayer,trace(wrongTerminal)),/invalid terminals/);
 });
@@ -166,4 +166,23 @@ test("two-layer batch rejects later bottom copper crossing atomically",()=>{
  }
  assert.throws(()=>solveTwoLayerCandidates(twoBatch,Bad),/copper clearance on bottom/);
  assert.equal(JSON.stringify(twoBatch),before);
+});
+
+test("uniform narrower two-layer solver geometry is widened to the requested minimum",()=>{
+ const narrow=structuredClone(crossing);
+ for(const p of narrow)if(p.route_type==="wire")p.width=.15;
+ const before=JSON.stringify(narrow);
+ assert.deepEqual(validateTwoLayerResult(twoLayer,trace(narrow)),validateTwoLayerResult(twoLayer,trace(crossing)));
+ assert.equal(JSON.stringify(narrow),before);
+ narrow[1].width=.1;
+ assert.throws(()=>validateTwoLayerResult(twoLayer,trace(narrow)),/variable width/);
+});
+test("widened candidate must pass clearance at the actual exported width",()=>{
+ const narrow=structuredClone(crossing);
+ for(const p of narrow)if(p.route_type==="wire")p.width=.15;
+ const o={type:"rect",layers:["bottom"],center:{x:0,y:.39},width:.2,height:.2,connectedTo:[]};
+ const p={...twoLayer,obstacles:[...twoLayer.obstacles,o]};
+ assert.equal(validateTwoLayerResult({...p,minTraceWidth:.15},trace(narrow)).width,.15);
+ assert.throws(()=>validateTwoLayerResult(p,trace(narrow)),/copper clearance on bottom/);
+ assert.throws(()=>validateTwoLayerResult({...p,minTraceWidth:0},trace(narrow)),/invalid minimum trace width/);
 });
