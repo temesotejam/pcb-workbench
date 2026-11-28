@@ -8,6 +8,7 @@ on:
       - 'library/parts.tsx'
       - 'library/footprints.ts'
       - 'scripts/**'
+      - 'tests/fixtures/**'
       - 'site/route-geometry.js'
       - 'site/footprint-preview.js'
       - 'site/project-model.js'
@@ -21,6 +22,7 @@ on:
       - 'library/parts.tsx'
       - 'library/footprints.ts'
       - 'scripts/**'
+      - 'tests/fixtures/**'
       - 'site/route-geometry.js'
       - 'site/footprint-preview.js'
       - 'site/project-model.js'
@@ -57,20 +59,23 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python3 -m scripts.negative_drc dist projects/native-resistors-manual/project.json
-      - name: Independently verify opt-in obstacle routing on three generic designs
+      - name: Independently verify opt-in obstacle routing on four generic designs
         env:
           QT_QPA_PLATFORM: offscreen
           PCBWB_OBSTACLE_ROUTER: '1'
         run: |
           set -euo pipefail
           mkdir -p obstacle-verification
-          for fixture in projects/native-resistors-mixed/native.json projects/native-rc-mixed/native.json tests/fixtures/obstacle-detour.json; do
+          for fixture in projects/native-resistors-mixed/native.json projects/native-rc-mixed/native.json tests/fixtures/obstacle-detour.json tests/fixtures/obstacle-multi.json; do
             name=$(basename "$(dirname "$fixture")")
-            if [[ "$fixture" == tests/* ]]; then name=detour; fi
+            if [[ "$fixture" == tests/* ]]; then name=$(basename "$fixture" .json); fi
             bun run build --project-json "$fixture"
             test -s dist-native/projects/native/obstacle-route-candidate.json
-            if [[ "$name" == detour ]]; then
+            if [[ "$name" == obstacle-detour ]]; then
               node --input-type=module -e 'import fs from "node:fs"; import {validateTopResult} from "./scripts/obstacle-solver.js"; const input=JSON.parse(fs.readFileSync("dist-native/projects/native/autorouter-input.json")); const result=JSON.parse(fs.readFileSync("dist-native/projects/native/obstacle-route-candidate.json")); const route=input.connections[0].pointsToConnect.map(p=>({...p,width:result.candidate.width,route_type:"wire"})); let blocked=false; try {validateTopResult(input,{traces:[{type:"pcb_trace",route}]})} catch(e){if(!String(e).includes("copper clearance"))throw e;blocked=true} if(!blocked||result.candidate.segments<2)throw Error("Detour fixture did not require obstacle avoidance");'
+            fi
+            if [[ "$name" == obstacle-multi ]]; then
+              node --input-type=module -e 'import fs from "node:fs"; import assert from "node:assert/strict"; const p=JSON.parse(fs.readFileSync(process.argv[1])); const r=JSON.parse(fs.readFileSync("dist-native/projects/native/obstacle-route-candidate.json")); assert.deepEqual(r.candidates.map(c=>c.name),["RETURN","AUX_A","AUX_B"]); assert.deepEqual(r.project.routes.slice(0,p.routes.length),p.routes); assert.equal(r.project.routes.length,p.routes.length+3); assert.equal(r.orderReady,false);' "$fixture"
             fi
             python3 scripts/fabricate.py dist-native dist-native/input-projects
             cp -r dist-native/projects/native "obstacle-verification/$name"
