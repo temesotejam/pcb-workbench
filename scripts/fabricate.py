@@ -64,6 +64,19 @@ def run(cmd, log):
     log.append({"command":["kicad-cli",*map(str,cmd)],"exit":cp.returncode,"output":cp.stdout+cp.stderr})
     return cp.returncode
 
+def fabrication_layers(summary, meta):
+    """Use the effective layer profile from the same build as the board.
+    Older build summaries may use the explicit project metadata as before.
+    Never guess missing layers, or fall back from a malformed build profile.
+    """
+    layers = summary.get("fabricationLayers", meta.get("layers"))
+    if (not isinstance(layers, list) or not layers
+            or any(not isinstance(layer, str) or not layer
+                   or layer.strip() != layer or "," in layer for layer in layers)
+            or len(set(layers)) != len(layers)):
+        raise ValueError("Missing or invalid fabrication layer profile")
+    return layers
+
 def process(root, meta_path):
     meta = json.loads(meta_path.read_text())
     dest = root / "projects" / meta["id"]
@@ -101,6 +114,11 @@ def process(root, meta_path):
         summary["files"].append("validation.json")
         summary_path.write_text(json.dumps(summary,indent=2))
         return ok
+    try:
+        layers = fabrication_layers(summary, meta)
+    except ValueError as exc:
+        blockers.append(str(exc))
+        return finish(False)
     # Absolute coordinates for all three exports; no independently shifted origins.
     checks = [
         ["sch","erc","--severity-all","--format","json","-o",dest/"erc.json",sch],
@@ -185,7 +203,7 @@ def process(root, meta_path):
         return finish(False)
     gerber.mkdir(parents=True, exist_ok=True)
     commands = [
-        ["pcb","export","gerbers","--layers",",".join(meta["layers"]),"-o",str(gerber)+"/",board],
+        ["pcb","export","gerbers","--layers",",".join(layers),"-o",str(gerber)+"/",board],
         ["pcb","export","drill","--format","excellon","-o",str(gerber)+"/",board],
         ["pcb","export","pos","--format","csv","--units","mm","--side","both","--exclude-dnp","-o",draft/"positions.csv",board],
     ]
