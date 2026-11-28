@@ -1,5 +1,7 @@
 """Single-user same-origin review-only manufacturing service; not a public API."""
 import argparse
+import base64
+import hmac
 import csv
 import hashlib
 import io
@@ -156,8 +158,21 @@ def manufacture(source):
         return bundle(board, source)
 
 
-def make_handler(origin, static, runner=manufacture):
+def hosted_password(origin, port, password):
+    """Fail closed for external origins; TLS terminates at a trusted proxy."""
+    if password is not None and (len(password) < 32 or len(password) > 256
+                                 or any(not 33 <= ord(c) <= 126 for c in password)):
+        raise ValueError("PCBWB_HOSTED_PASSWORD must be 32-256 printable non-space ASCII characters")
+    if origin != f"http://127.0.0.1:{port}":
+        if urlsplit(origin).scheme != "https" or password is None:
+            raise ValueError("External origin requires HTTPS and PCBWB_HOSTED_PASSWORD")
+    return password
+
+
+def make_handler(origin, static, runner=manufacture, password=None):
     authority = urlsplit(origin).netloc
+    expected = None if password is None else hashlib.sha256(
+        base64.b64encode(("pcbwb:" + password).encode("ascii"))).digest()
 
     class Handler(SimpleHTTPRequestHandler):
         timeout = 15
@@ -165,33 +180,64 @@ def make_handler(origin, static, runner=manufacture):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(static), **kwargs)
 
+        def end_headers(self):
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            super().end_headers()
+
+        def authorized(self):
+            if self.headers.get_all("Host") != [authority]:
+                self.error_json(403, "Host mismatch")
+                return False
+            if expected is None:
+                return True
+            values = self.headers.get_all("Authorization") or []
+            if len(values) == 1:
+                scheme, _, token = values[0].partition(" ")
+                if scheme.lower() == "basic" and hmac.compare_digest(
+                        hashlib.sha256(token.encode("utf-8")).digest(), expected):
+                    return True
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", 'Basic realm="PCB Workbench"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return False
+
         def reply(self, status, body, kind="application/json", attachment=False, source=None):
             self.send_response(status)
             self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("X-Content-Type-Options", "nosniff")
             if attachment:
                 self.send_header("Content-Disposition", 'attachment; filename="PCBWB-DRAFT-DO-NOT-ORDER.zip"')
                 self.send_header("X-PCBWB-Source-SHA256", hashlib.sha256(source).hexdigest())
                 self.send_header("X-PCBWB-Bundle-SHA256", hashlib.sha256(body).hexdigest())
             self.end_headers()
-            self.wfile.write(body)
+            if self.command != "HEAD":
+                self.wfile.write(body)
 
         def error_json(self, status, message):
             self.reply(status, json.dumps({"error": message, "orderReady": False}).encode())
 
         def do_GET(self):
+            if not self.authorized():
+                return
             if self.path == API:
-                if self.headers.get("Host") != authority:
-                    return self.error_json(403, "Host mismatch")
                 return self.reply(200, b'{"service":"pcbwb-manufacturing-v1","orderReady":false}')
             return super().do_GET()
 
+        def do_HEAD(self):
+            if not self.authorized():
+                return
+            if self.path == API:
+                return self.reply(200, b'{"service":"pcbwb-manufacturing-v1","orderReady":false}')
+            return super().do_HEAD()
+
         def do_POST(self):
+            if not self.authorized():
+                return
             if self.path != API:
                 return self.error_json(404, "Unknown endpoint")
-            if self.headers.get("Host") != authority or self.headers.get("Origin") != origin:
+            if self.headers.get_all("Origin") != [origin]:
                 return self.error_json(403, "Same-origin request required")
             if self.headers.get("Transfer-Encoding") or self.headers.get_content_type() != "application/json":
                 return self.error_json(415, "JSON with Content-Length required")
@@ -225,9 +271,13 @@ def main():
     if (parsed.scheme not in ("http", "https") or not parsed.netloc
             or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment):
         parser.error("Use an exact HTTP(S) origin without trailing slash")
+    try:
+        password = hosted_password(origin, args.port, os.environ.get("PCBWB_HOSTED_PASSWORD"))
+    except ValueError as exc:
+        parser.error(str(exc))
     if not (ROOT / "dist" / "editor.html").is_file():
         parser.error("Run bun run build first")
-    with HTTPServer(("127.0.0.1", args.port), make_handler(origin, ROOT / "dist")) as server:
+    with HTTPServer(("127.0.0.1", args.port), make_handler(origin, ROOT / "dist", password=password)) as server:
         print("Review-only service: " + origin + "/editor.html", flush=True)
         server.serve_forever()
 

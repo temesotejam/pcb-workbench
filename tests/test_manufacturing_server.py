@@ -1,4 +1,5 @@
 import io
+import base64
 import json
 import hashlib
 from pathlib import Path
@@ -9,7 +10,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from http.server import HTTPServer
 import zipfile
-from scripts.manufacturing_server import API, FILES, Rejected, audit_gerber_archive, audit_assembly_delivery, stage_diagnostic, bundle, make_handler
+from scripts.manufacturing_server import API, FILES, Rejected, audit_gerber_archive, audit_assembly_delivery, stage_diagnostic, bundle, make_handler, hosted_password
 
 
 def gerber_zip(entries):
@@ -137,6 +138,65 @@ class ManufacturingServerTests(unittest.TestCase):
                         post(b"bad")
                     self.assertEqual(error.exception.code,422)
                     self.assertFalse(json.load(error.exception)["orderReady"])
+                finally:
+                    server.shutdown()
+                    thread.join()
+
+    def test_hosted_origin_configuration(self):
+        password = "x" * 32
+        self.assertIsNone(hosted_password("http://127.0.0.1:8765", 8765, None))
+        self.assertEqual(hosted_password("https://pcb.example.test", 8765, password), password)
+        for origin, secret in (("https://pcb.example.test", None),
+                               ("http://pcb.example.test", password),
+                               ("https://pcb.example.test", "short"),
+                               ("https://pcb.example.test", " " * 32),
+                               ("http://127.0.0.1:8765", "")):
+            with self.subTest(origin=origin), self.assertRaises(ValueError):
+                hosted_password(origin, 8765, secret)
+
+    def test_authenticated_static_and_manufacture(self):
+        calls = []
+        password = "x" * 32
+        auth = "Basic " + base64.b64encode(("pcbwb:" + password).encode()).decode()
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "editor.html").write_text("editor")
+            with HTTPServer(("127.0.0.1", 0), make_handler("http://unused", directory)) as server:
+                origin = "http://127.0.0.1:" + str(server.server_port)
+                def runner(source):
+                    calls.append(source)
+                    return b"zip"
+                server.RequestHandlerClass = make_handler(origin, directory, runner, password=password)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    for path, method in (("/editor.html", "GET"), ("/editor.html", "HEAD"),
+                                         (API, "GET"), (API, "HEAD"), (API, "POST")):
+                        for credential in (None, "Basic wrong", "Bearer " + password):
+                            headers = {"Origin": origin, "Content-Type": "application/json"}
+                            if credential:
+                                headers["Authorization"] = credential
+                            with self.subTest(path=path, method=method), self.assertRaises(HTTPError) as error:
+                                urlopen(Request(origin + path, b"{}" if method == "POST" else None,
+                                                headers, method=method))
+                            self.assertEqual(error.exception.code, 401)
+                            self.assertIn("Basic", error.exception.headers["WWW-Authenticate"])
+                            self.assertEqual(error.exception.headers["Cache-Control"], "no-store")
+                    self.assertEqual(calls, [])
+                    headers = {"Authorization": auth}
+                    with urlopen(Request(origin + "/editor.html", headers=headers)) as response:
+                        self.assertEqual(response.read(), b"editor")
+                        self.assertEqual(response.headers["Cache-Control"], "no-store")
+                    with urlopen(Request(origin + API, headers=headers, method="HEAD")) as response:
+                        self.assertEqual(response.read(), b"")
+                    with self.assertRaises(HTTPError) as error:
+                        urlopen(Request(origin + API, b"{}", dict(headers, Origin="https://other.test",
+                                                                  **{"Content-Type":"application/json"})))
+                    self.assertEqual(error.exception.code, 403)
+                    self.assertEqual(calls, [])
+                    with urlopen(Request(origin + API, b"{}", dict(headers, Origin=origin,
+                                                                  **{"Content-Type":"application/json"}))) as response:
+                        self.assertEqual(response.read(), b"zip")
+                    self.assertEqual(calls, [b"{}"])
                 finally:
                     server.shutdown()
                     thread.join()
