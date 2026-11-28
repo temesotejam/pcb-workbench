@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {topSolverInput,validateTopResult,solveTopCandidate,solveTopCandidates,appendCandidate,twoLayerSolverInput,validateTwoLayerResult,solveTwoLayerCandidate} from "../scripts/obstacle-solver.js";
+import {topSolverInput,validateTopResult,solveTopCandidate,solveTopCandidates,appendCandidate,twoLayerSolverInput,validateTwoLayerResult,solveTwoLayerCandidate,solveTwoLayerCandidates} from "../scripts/obstacle-solver.js";
 const input={layerCount:2,minTraceWidth:.2,bounds:{minX:-5,maxX:5,minY:-5,maxY:5},connections:[{name:"RETURN",pointsToConnect:[{x:-4,y:0,layer:"top"},{x:4,y:0,layer:"top"}]}],obstacles:[{type:"rect",layers:["top"],center:{x:0,y:0},width:1,height:2,connectedTo:[]},{type:"rect",layers:["bottom"],center:{x:0,y:2},width:1,height:1,connectedTo:[]}]};
 const out=points=>({traces:[{type:"pcb_trace",route:points.map(([x,y])=>({route_type:"wire",x,y,width:.2,layer:"top"}))}]});
 const detour=out([[-4,0],[-2,2],[2,2],[4,0]]);
@@ -128,4 +128,42 @@ test("two-layer mode retains bottom obstacles and invokes the existing solver",(
  class Good{constructor(prepared){assert.equal(prepared.layerCount,2);assert.equal(prepared.obstacles.length,2)}step(){this.solved=true}getOutputSimpleRouteJson(){return trace(crossing)}}
  assert.equal(solveTwoLayerCandidate(p,Good).vias,2);
  assert.throws(()=>twoLayerSolverInput({...p,layerCount:4}),/exactly two/);
+});
+
+test("two-layer shape failure identifies the actual rejected token and terminal",()=>{
+ const malformed=structuredClone(crossing);
+ malformed[2].to_layer="inner1";
+ assert.throws(()=>validateTwoLayerResult(twoLayer,trace(malformed)),/invalid token.*"index":2.*"to_layer":"inner1"/);
+ const wrongWidth=structuredClone(crossing);wrongWidth[1].width=.1;
+ assert.throws(()=>validateTwoLayerResult(twoLayer,trace(wrongWidth)),/invalid token.*"index":1.*"width":0.1/);
+ const wrongTerminal=structuredClone(crossing);wrongTerminal[0].layer="bottom";
+ assert.throws(()=>validateTwoLayerResult(twoLayer,trace(wrongTerminal)),/invalid terminals/);
+});
+const twoBatch={...twoLayer,obstacles:[],connections:[
+ {name:"A",pointsToConnect:[{x:-4,y:0,layer:"top"},{x:4,y:0,layer:"top"}]},
+ {name:"B",pointsToConnect:[{x:0,y:-4,layer:"top"},{x:0,y:4,layer:"top"}]}
+]};
+test("two-layer batch retains layer-specific track and through-via obstacles",()=>{
+ const before=JSON.stringify(twoBatch),seen=[];
+ class Good{
+  constructor(p){this.p=p;seen.push(p)}
+  step(){this.solved=true}
+  getOutputSimpleRouteJson(){return this.p.connections[0].name==="A"?trace(crossing):trace([w(0,"top",-4),w(0,"top",4)])}
+ }
+ const candidates=solveTwoLayerCandidates(twoBatch,Good);
+ assert.deepEqual(candidates.map(c=>[c.name,c.vias]),[["A",2],["B",0]]);
+ assert.equal(seen[1].obstacles.filter(o=>o.layers.length===2).length,2);
+ assert.equal(seen[1].obstacles.filter(o=>o.layers.length===1&&o.layers[0]==="bottom").length,1);
+ assert.ok(seen[1].obstacles.every(o=>o.connectedTo.length===0));
+ assert.equal(JSON.stringify(twoBatch),before);
+});
+test("two-layer batch rejects later bottom copper crossing atomically",()=>{
+ const before=JSON.stringify(twoBatch);
+ class Bad{
+  constructor(p){this.p=p}
+  step(){this.solved=true}
+  getOutputSimpleRouteJson(){return this.p.connections[0].name==="A"?trace(crossing):trace([w(0,"top",-4),w(0,"top",-2),v(0,"top","bottom",-2),w(0,"bottom",-2),w(0,"bottom",2),v(0,"bottom","top",2),w(0,"top",2),w(0,"top",4)])}
+ }
+ assert.throws(()=>solveTwoLayerCandidates(twoBatch,Bad),/copper clearance on bottom/);
+ assert.equal(JSON.stringify(twoBatch),before);
 });
