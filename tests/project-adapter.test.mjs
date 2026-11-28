@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {projectToCircuitPlan,planMetadata,neutralEnginePlan,restoreEngineNetNames} from "../scripts/project-adapter.js";
+import {projectToCircuitPlan,planMetadata,neutralEnginePlan,restoreEngineNetNames,nativeRoutingPolicy} from "../scripts/project-adapter.js";
 const read=p=>JSON.parse(readFileSync(new URL(p,import.meta.url),"utf8"));
 const catalog=read("../library/catalog.json");
 for(const id of ["native-resistors","native-rc"]){
@@ -80,4 +80,21 @@ test("separated zones can share a layer, including simultaneous opposite-side zo
   assert.throws(()=>projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true}),/outline separation/);
   p.zones[1].bounds.yMin=-.75;
   assert.equal(projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true}).zones.length,4);
+});
+
+test("native routing policy agrees for private HTTP and explicit CLI obstacle routing",()=>{
+  const plan=id=>projectToCircuitPlan(read("../projects/"+id+"/native.json"),catalog,{allowManual:true});
+  const manual=plan("native-resistors-manual"), mixed=plan("native-resistors-mixed"), automatic=plan("native-resistors");
+  const mode=(p,priv,env={})=>Object.values(nativeRoutingPolicy(p,priv,env));
+  const full={PCBWB_OBSTACLE_ROUTER:"1",PCBWB_OBSTACLE_TWO_LAYER:"1",PCBWB_OBSTACLE_REVERSE_RETRY:"1"};
+  assert.deepEqual(mode(mixed,true),[true,true,true,true]);
+  assert.deepEqual(mode(mixed,false,full),mode(mixed,true));
+  assert.deepEqual(mode(mixed,false,{PCBWB_OBSTACLE_ROUTER:"1"}),[true,true,false,false]);
+  assert.deepEqual(mode(mixed,false),[false,false,false,false]);
+  for(const priv of [false,true]){
+    assert.deepEqual(mode(manual,priv),[true,false,false,false]);
+    assert.deepEqual(mode(automatic,priv),[false,false,false,false]);
+  }
+  assert.throws(()=>mode(mixed,false,{PCBWB_OBSTACLE_TWO_LAYER:"1"}),/Two-layer obstacle mode/);
+  assert.throws(()=>mode(mixed,false,{PCBWB_OBSTACLE_REVERSE_RETRY:"1"}),/Reverse retry/);
 });
