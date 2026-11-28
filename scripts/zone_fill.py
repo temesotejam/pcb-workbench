@@ -63,22 +63,29 @@ def finite(value):
 
 
 def zone_specs(zones):
-    if not isinstance(zones, list) or not 1 <= len(zones) <= 2:
-        raise ValueError("Zone fill supports one zone per outer layer")
+    if not isinstance(zones, list) or not 1 <= len(zones) <= 16:
+        raise ValueError("Zone fill supports 1 to 16 rectangles")
     result = {}
-    used_layers = set()
+    rectangles = []
     for z in zones:
         name, net, layer = z["id"], z["net"], z["layer"]
         if (not re.fullmatch(r"Z[1-9][0-9]{0,5}", name)
                 or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", net)
-                or layer not in LAYERS or layer in used_layers or name in result):
+                or layer not in LAYERS or name in result):
             raise ValueError("Invalid or overlapping zone identity/layer")
-        used_layers.add(layer)
         c = finite(z["clearance"])
         b = z["bounds"]
         x0, y0, x1, y1 = (finite(b[k]) for k in ("xMin", "yMin", "xMax", "yMax"))
         if not .05 <= c <= 5 or x1-x0 < .05 or y1-y0 < .05 or max(map(abs,(x0,y0,x1,y1))) > 500:
             raise ValueError("Invalid zone clearance or bounds")
+        for old_name, old_layer, old_c, ax0, ay0, ax1, ay1 in rectangles:
+            if old_layer != layer:
+                continue
+            dx = max(0, x0-ax1, ax0-x1)
+            dy = max(0, y0-ay1, ay0-y1)
+            if math.hypot(dx,dy)+1e-6 < max(c,old_c):
+                raise ValueError("Same-layer zones overlap or lack outline separation: "+name+" / "+old_name)
+        rectangles.append((name,layer,c,x0,y0,x1,y1))
         corners = [(100+x0,100-y1),(100+x1,100-y1),(100+x1,100-y0),(100+x0,100-y0)]
         result[name] = ("/"+net, LAYERS[layer], c, corners)
     return result
@@ -148,11 +155,13 @@ def audit_filled_zones(source, zones):
         layer_fields = children(z,"layer") + children(z,"layers")
         if len(layer_fields)!=1 or layer_fields[0][1:]!=[layer]:
             raise ValueError("Zone layer mismatch: "+name)
-        if abs(float(one(one(z,"connect_pads"),"clearance")[1])-c)>1e-6:
+        actual_clearance = float(one(one(z,"connect_pads"),"clearance")[1])
+        if not math.isfinite(actual_clearance) or abs(actual_clearance-c)>1e-6:
             raise ValueError("Zone clearance mismatch: "+name)
         outline = points(one(z,"polygon"))
-        rounded = lambda ps: sorted((round(x,6),round(y,6)) for x,y in ps)
-        if rounded(outline)!=rounded(corners):
+        rounded = lambda ps: [(round(x,6),round(y,6)) for x,y in ps]
+        expected_outline = rounded(corners)
+        if len(outline)!=4 or not any(rounded(outline)==seq[i:]+seq[:i] for seq in (expected_outline,expected_outline[::-1]) for i in range(4)):
             raise ValueError("Zone outline mismatch: "+name)
         x0,y0=corners[0]
         x1,y1=corners[2]
