@@ -301,3 +301,31 @@ test("draft copper clearance handles via disks, bounded scans and missing geomet
   assert.equal(inspectDraftClearance(p,{}).complete,false);
   assert.equal(JSON.stringify(p),before);
 });
+
+import {copperObstacles,buildMixedAutorouterInput} from "../scripts/autorouter-input.js";
+test("router obstacle rectangles cover diagonal manual capsules and through-vias on both layers",()=>{
+  const input={segments:[{from:{x:0,y:0},to:{x:3,y:4},width:.3,layer:"top"},{from:{x:3,y:4},to:{x:3,y:5},width:.3,layer:"bottom"}],vias:[{x:3,y:4,diameter:.8,drill:.4}]};
+  const before=JSON.stringify(input),a=copperObstacles(input);
+  assert.equal(a.length,3);assert.equal(a[0].width,5.3);assert.equal(a[0].height,.3);
+  assert.ok(Math.abs(a[0].ccwRotationDegrees-53.13010235415598)<1e-12);
+  assert.deepEqual(a[0].center,{x:1.5,y:2});assert.deepEqual(a[1].layers,["bottom"]);
+  assert.deepEqual(a[2].layers,["top","bottom"]);assert.equal(a[2].width,.8);
+  assert.ok(a.every(o=>o.connectedTo.length===0));assert.equal(JSON.stringify(input),before);
+  assert.throws(()=>copperObstacles({...input,segments:[{...input.segments[0],to:{x:0,y:0}}]}),/Invalid manual segment/);
+});
+test("mixed routing input excludes manual connections and gives exemptions only to remaining-net pads",()=>{
+  const {p,f,json}=manualCase();p.routes=p.routes.slice(0,1);p.routes[0].waypoints=[];
+  for(const part of Object.values(f.parts))for(const pad of part.pads)Object.assign(pad,{shape:"rect",width:.5,height:.7,rotation:0});
+  const before=JSON.stringify({p,f,json}),a=buildMixedAutorouterInput(p,f,json);
+  assert.equal(a.layerCount,2);assert.equal(a.obstacles.length,5);
+  assert.deepEqual(a.connections.map(n=>n.name),[p.nets[1].name]);
+  assert.deepEqual(a.connections[0].pointsToConnect,p.nets[1].pins.map(pin=>{const c=p.components.find(c=>c.ref===pin.ref);return {x:c.pcb.x+.5,y:c.pcb.y+.25,layer:"top"}}));
+  assert.equal(a.obstacles.filter(o=>o.connectedTo[0]===p.nets[1].name).length,2);
+  assert.equal(a.obstacles.filter(o=>!o.connectedTo.length).length,3);
+  assert.deepEqual(a.bounds,{minX:-p.board.width/2,maxX:p.board.width/2,minY:-p.board.height/2,maxY:p.board.height/2});
+  assert.equal(JSON.stringify({p,f,json}),before);
+  assert.throws(()=>buildMixedAutorouterInput(p,f,json.map(e=>e.type==="pcb_smtpad"?{...e,x:e.x+.01}:e)),/position mismatch/);
+  assert.throws(()=>buildMixedAutorouterInput(p,f,[...json,{type:"pcb_smtpad",layer:"top"}]),/Unexpected placed pad/);
+  assert.throws(()=>buildMixedAutorouterInput(p,{},json),/footprint unavailable/);
+  assert.throws(()=>buildMixedAutorouterInput(p,f,json,{minTraceWidth:0}),/Invalid routing input/);
+});
