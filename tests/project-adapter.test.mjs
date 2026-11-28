@@ -62,6 +62,22 @@ test("opt-in zones are retained for independent fill and never fed to routing",(
     assert.deepEqual(planMetadata(plan,id).expectedZones,p.zones);
     assert.equal(JSON.stringify(p),before);
     p.zones.push({...p.zones[0],id:"Z2"});
-    assert.throws(()=>projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true}),/one zone per outer layer/);
+    assert.throws(()=>projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true}),/Same-layer zones overlap/);
   }
+});
+
+test("separated zones can share a layer, including simultaneous opposite-side zones",()=>{
+  const p=read("../tests/fixtures/obstacle-two-layer-multi.json");
+  const z=(id,net,layer,yMin,yMax)=>({id,net,layer,clearance:.25,bounds:{xMin:-3.8,xMax:3.8,yMin,yMax}});
+  p.zones=[z("Z1","SUPPLY","top",-14.5,-1),z("Z2","SUPPLY_B","top",1,14.5),z("Z3","RETURN","bottom",-14.5,-1),z("Z4","RETURN_B","bottom",1,14.5)];
+  const before=JSON.stringify(p);
+  const plan=projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true});
+  assert.deepEqual(plan.zones,p.zones);
+  assert.deepEqual(plan.manualProject.zones,[]);
+  assert.deepEqual(planMetadata(plan,"native").expectedZones,p.zones);
+  assert.equal(JSON.stringify(p),before);
+  p.zones[1].bounds.yMin=-.9;
+  assert.throws(()=>projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true}),/outline separation/);
+  p.zones[1].bounds.yMin=-.75;
+  assert.equal(projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true}).zones.length,4);
 });
