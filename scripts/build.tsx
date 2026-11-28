@@ -228,7 +228,7 @@ const args=process.argv.slice(2)
 if(args.length!==0&&(args.length!==2||args[0]!=="--project-json"))throw new Error("Usage: bun run build [--project-json FILE]")
 const standalone=args.length===2
 // Parse before removing output; do not publish arbitrary browser exports to Pages.
-const input=standalone?projectToCircuitPlan(JSON.parse(await readFile(resolve(args[1]),"utf8")),catalog,{allowManual:true}):null
+const input=standalone?projectToCircuitPlan(JSON.parse(await readFile(resolve(args[1]),"utf8")),catalog,{allowManual:true,allowZones:process.env.PCBWB_ZONE_FILL==="1"}):null
 const out=resolve(root,standalone?"dist-native":"dist")
 await rm(out,{recursive:true,force:true})
 await mkdir(out,{recursive:true})
@@ -259,7 +259,7 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
   if(meta.id!==id)throw new Error("Project id mismatch: "+id)
   const path=resolve(out,"projects",id)
   await mkdir(path,{recursive:true})
-  const result={id,name:meta.name,revision:meta.revision,purpose:meta.purpose,fabricationLayers:meta.layers,status:"blocked",...(plan?.manualProject?{expectedViaDrills:plan.manualProject.routes.flatMap((r:any)=>r.waypoints.filter((p:any)=>p.via).map((p:any)=>({x:p.x,y:p.y,drill:p.via.drill})))}:{}),parts:[] as ReturnType<typeof resolveParts>,errors:[] as string[],files:[] as string[]}
+  const result={id,name:meta.name,revision:meta.revision,purpose:meta.purpose,fabricationLayers:meta.layers,...(plan?.zones?{expectedZones:plan.zones}:{}),status:"blocked",...(plan?.manualProject?{expectedViaDrills:plan.manualProject.routes.flatMap((r:any)=>r.waypoints.filter((p:any)=>p.via).map((p:any)=>({x:p.x,y:p.y,drill:p.via.drill})))}:{}),parts:[] as ReturnType<typeof resolveParts>,errors:[] as string[],files:[] as string[]}
   try{
     result.parts=resolveParts(meta.parts)
     const circuit=new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})

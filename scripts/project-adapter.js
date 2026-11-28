@@ -2,10 +2,16 @@ import {validateProject,inspectProject} from "../site/project-model.js";
 import {splitManualProject} from "./mixed-route-export.js";
 
 // Whitelist the fields consumed by the renderer; never execute imported text.
-export function projectToCircuitPlan(project,catalog,{allowManual=false}={}){
+export function projectToCircuitPlan(project,catalog,{allowManual=false,allowZones=false}={}){
   validateProject(project,catalog);
-  if(project.zones?.length)throw new Error("Copper zones cannot yet be exported; refusing to omit unfilled zones");
+  if(project.zones?.length&&!allowZones)throw new Error("Copper zones cannot yet be exported; refusing to omit unfilled zones");
   if(project.routes?.length&&!allowManual)throw new Error("Manual PCB routes cannot yet be exported; refusing to substitute autorouting");
+  const zones=project.zones?.length?structuredClone(project.zones):null;
+  if(zones){
+    if(new Set(zones.map(z=>z.layer)).size!==zones.length)throw new Error("Zone fill supports one zone per outer layer");
+    // Routing is still complete without zone copper; only the independent KiCad stage may fill it.
+    project={...project,zones:[]};
+  }
   const issues=inspectProject(project.routes?.length?{...project,routes:[]}:project,catalog).issues;
   if(issues.length)throw new Error("Logical design incomplete: "+issues.join("; "));
   return {
@@ -16,11 +22,12 @@ export function projectToCircuitPlan(project,catalog,{allowManual=false}={}){
     nets:project.nets.map(n=>n.name),
     traces:project.nets.flatMap(n=>n.pins.map(pin=>({from:"."+pin.ref+" > .pin"+pin.pin,to:"net."+n.name}))),
     ...(project.routes?.length?{manualProject:structuredClone(project),mixedRouting:splitManualProject(project).automaticNets.length>0}:{}),
+    ...(zones?{zones}:{}),
     orderReady:false
   };
 }
 export function planMetadata(plan,id){
-  return {id,name:plan.name,revision:"schema-v1",purpose:"Independent JSON design; unreviewed preview",release:false,assemblyProfile:"Candidate only",layers:["F.Cu","B.Cu","F.Paste","B.Paste","F.Mask","B.Mask","F.SilkS","B.SilkS","Edge.Cuts"],parts:plan.parts,expectedNets:plan.nets,allowedWarnings:[]};
+  return {id,name:plan.name,revision:"schema-v1",purpose:"Independent JSON design; unreviewed preview",release:false,assemblyProfile:"Candidate only",layers:["F.Cu","B.Cu","F.Paste","B.Paste","F.Mask","B.Mask","F.SilkS","B.SilkS","Edge.Cuts"],parts:plan.parts,expectedNets:plan.nets,allowedWarnings:[],...(plan.zones?{expectedZones:plan.zones}:{})};
 }
 
 // Schema v1 names are logical local nets, not implicit power declarations.
