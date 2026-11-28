@@ -16,10 +16,10 @@ def parse_board(source):
     root = None
     pos = 0
     while pos < len(source):
-        if not source[pos:].strip():
-            break
         m = TOKEN.match(source, pos)
         if not m:
+            if not source[pos:].strip():
+                break
             raise ValueError("Invalid KiCad token")
         pos = m.end()
         token = m[1]
