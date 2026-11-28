@@ -51,3 +51,17 @@ test("zone drafts never disappear silently during conversion of either generic b
     p.zones=[];assert.equal(projectToCircuitPlan(p,catalog).orderReady,false);
   }
 });
+
+test("opt-in zones are retained for independent fill and never fed to routing",()=>{
+  for(const id of ["native-resistors","native-rc"]){
+    const p=read("../projects/"+id+"-manual/native.json");
+    p.zones=[{id:"Z1",net:p.nets[0].name,layer:"top",clearance:.25,bounds:{xMin:-8,yMin:-6,xMax:8,yMax:6}}];
+    const before=JSON.stringify(p);
+    const plan=projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true});
+    assert.deepEqual(plan.zones,p.zones);assert.deepEqual(plan.manualProject.zones,[]);
+    assert.deepEqual(planMetadata(plan,id).expectedZones,p.zones);
+    assert.equal(JSON.stringify(p),before);
+    p.zones.push({...p.zones[0],id:"Z2"});
+    assert.throws(()=>projectToCircuitPlan(p,catalog,{allowManual:true,allowZones:true}),/one zone per outer layer/);
+  }
+});
