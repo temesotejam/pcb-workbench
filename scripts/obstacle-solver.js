@@ -27,7 +27,7 @@ export function topSolverInput(input){
   const name=input.connections[0].name;
   const obstacles=input.obstacles.filter(o=>o.layers.includes("top")).map(rectangle);
   // Additional clearance reserve for non-net obstacles; the solver may apply its own rules.
-  return {...structuredClone(input),layerCount:1,bounds,obstacles:obstacles.map(o=>({...o,layers:["top"],width:o.width+(o.connectedTo.includes(name)?0:2*clearance),height:o.height+(o.connectedTo.includes(name)?0:2*clearance)}))};
+  return structuredClone({...input,layerCount:1,bounds,obstacles:obstacles.map(o=>({...o,layers:["top"],width:o.width+(o.connectedTo.includes(name)?0:2*clearance),height:o.height+(o.connectedTo.includes(name)?0:2*clearance)}))});
 }
 export function validateTopResult(input,output){
   const prepared=topSolverInput(input),connection=input.connections[0], [a,b]=connection.pointsToConnect;
@@ -37,10 +37,28 @@ export function validateTopResult(input,output){
   if(!Array.isArray(route)||route.length<2||route.length>102||route.some(p=>p.route_type!=="wire"||p.layer!=="top"||![p.x,p.y,p.width].every(Number.isFinite)||p.width<input.minTraceWidth-eps||p.width>5))fail("unsupported route geometry or via");
   const width=route[0].width;
   if(route.some(p=>Math.abs(p.width-width)>eps))fail("variable width");
-  if(near(route[0],b)&&near(route.at(-1),a))route=[...route].reverse();
-  if(!near(route[0],a)||!near(route.at(-1),b))fail("terminal identity mismatch");
-  // Snap only sub-micron numerical differences, then validate the exact model path.
-  const points=[{x:a.x,y:a.y},...route.slice(1,-1).map(p=>({x:p.x,y:p.y})),{x:b.x,y:b.y}];
+  // A solver may finish inside a pad rather than at its center. Identify the
+  // terminal using its unique centered, same-net pad, never a foreign pad or
+  // an arbitrary proximity tolerance. The inscribed disk also fits rotated pads.
+  const owns=(terminal,p)=>{
+    if(near(terminal,p))return true;
+    const pads=input.obstacles.filter(o=>o.layers.includes("top")&&o.connectedTo.includes(connection.name)&&near(o.center,terminal));
+    if(pads.length!==1)return false;
+    const pad=pads[0];rectangle(pad); // validate original, unexpanded dimensions
+    return Math.hypot(p.x-terminal.x,p.y-terminal.y)<=Math.min(pad.width,pad.height)/2-eps;
+  };
+  const forward=owns(a,route[0])&&owns(b,route.at(-1));
+  const reverse=owns(b,route[0])&&owns(a,route.at(-1));
+  if(forward===reverse)fail("terminal identity mismatch or ambiguity: "+JSON.stringify({expected:[a,b],actual:[route[0],route.at(-1)]}));
+  if(reverse)route=[...route].reverse();
+  // Retain off-center solver endpoints as explicit copper lead-ins, not a
+  // relaxed model/serialization tolerance. Audit all newly added segments.
+  const xy=p=>({x:p.x,y:p.y});
+  const points=route.map(xy);
+  const resolution=1e-5; // KiCad parity grid; avoid unrepresentably short lead-ins
+  if(Math.hypot(points[0].x-a.x,points[0].y-a.y)<=resolution)points[0]=xy(a);else points.unshift(xy(a));
+  if(Math.hypot(points.at(-1).x-b.x,points.at(-1).y-b.y)<=resolution)points[points.length-1]=xy(b);else points.push(xy(b));
+  if(points.length>102)fail("too many waypoints after terminal attachment");
   const obstacles=input.obstacles.filter(o=>o.layers.includes("top")&&!o.connectedTo.includes(connection.name)).map(rectangle);
   for(const p of points)if(p.x-width/2<prepared.bounds.minX||p.x+width/2>prepared.bounds.maxX||p.y-width/2<prepared.bounds.minY||p.y+width/2>prepared.bounds.maxY)fail("board-edge clearance");
   for(let i=1;i<points.length;i++){

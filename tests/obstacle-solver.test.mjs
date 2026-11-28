@@ -38,3 +38,27 @@ test("draft append keeps existing manual route immutable and rejects replacement
  assert.equal(JSON.stringify(project),before);
  assert.throws(()=>appendCandidate(p,candidate),/not untouched/);
 });
+
+test("pad-interior endpoints are explicitly joined to exact model centers",()=>{
+ const p=structuredClone(input);
+ for(const x of [-4,4])p.obstacles.push({type:"rect",layers:["top"],center:{x,y:0},width:.6,height:.8,ccwRotationDegrees:45,connectedTo:["RETURN"]});
+ const candidate=validateTopResult(p,out([[3.8,0],[2,2],[-2,2],[-3.8,0]]));
+ assert.deepEqual(candidate.waypoints,[{x:-3.8,y:0},{x:-2,y:2},{x:2,y:2},{x:3.8,y:0}]);
+ assert.equal(candidate.segments,5);
+ assert.throws(()=>validateTopResult(p,out([[-3.6,0],[-2,2],[2,2],[3.8,0]])),/terminal identity/);
+ const noOwner=structuredClone(p);noOwner.obstacles.at(-1).connectedTo=[];
+ assert.throws(()=>validateTopResult(noOwner,out([[-3.8,0],[-2,2],[2,2],[3.8,0]])),/terminal identity/);
+ const ambiguous=structuredClone(p);ambiguous.obstacles.push(structuredClone(p.obstacles.at(-1)));
+ assert.throws(()=>validateTopResult(ambiguous,out([[-3.8,0],[-2,2],[2,2],[3.8,0]])),/terminal identity/);
+});
+test("new terminal lead-ins are subject to foreign copper clearance",()=>{
+ const p=structuredClone(input);
+ p.obstacles.push({type:"rect",layers:["top"],center:{x:-4,y:0},width:1.5,height:1.5,connectedTo:["RETURN"]});
+ p.obstacles.push({type:"rect",layers:["top"],center:{x:-4.1,y:0},width:.1,height:.1,connectedTo:[]});
+ assert.throws(()=>validateTopResult(p,out([[-3.4,0],[-2,2],[2,2],[4,0]])),/copper clearance/);
+});
+test("solver input does not share obstacle centers with the source",()=>{
+ const p=structuredClone(input),prepared=topSolverInput(p);
+ prepared.obstacles[0].center.x=99;
+ assert.equal(p.obstacles[0].center.x,0);
+});
