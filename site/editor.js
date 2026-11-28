@@ -157,4 +157,29 @@ $("new").onclick=()=>{if(confirm("現在のプロジェクトを置換します�
 $("add-component").onsubmit=e=>{e.preventDefault();action({type:"add-component",lcsc:$("part").value})};
 $("add-net").onsubmit=e=>{e.preventDefault();action({type:"add-net",name:$("net-name").value})};
 $("export").onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(project,null,2)],{type:"application/json"})),a=el("a",null,document.body);a.href=url;a.download="pcb-workbench-project.json";a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+$("manufacture").onclick=async()=>{
+  const button=$("manufacture"), report=$("manufacture-status");
+  if(!project||button.disabled)return;
+  const snapshot=JSON.stringify(project);
+  button.disabled=true;report.textContent="製造サービスを確認中…";
+  try{
+    const endpoint=new URL("/api/manufacture",location.origin);
+    const probe=await fetch(endpoint,{cache:"no-store",redirect:"error"});
+    if(!probe.ok||!probe.headers.get("content-type")?.includes("application/json"))throw Error("製造サービス未接続（GitHub Pages単体では利用不可）");
+    const info=await probe.json();
+    if(info.service!=="pcbwb-manufacturing-v1"||info.orderReady!==false)throw Error("未対応の製造サービス");
+    report.textContent="独立検証中…";
+    const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:snapshot,cache:"no-store",redirect:"error"});
+    if(!response.ok){
+      let message="製造検証失敗 (HTTP "+response.status+")";
+      if(response.headers.get("content-type")?.includes("application/json"))message=(await response.json()).error||message;
+      throw Error(message);
+    }
+    if(!response.headers.get("content-type")?.startsWith("application/zip"))throw Error("不正な製造レスポンス");
+    const url=URL.createObjectURL(await response.blob()),a=el("a",null,document.body);
+    a.href=url;a.download="PCBWB-DRAFT-DO-NOT-ORDER.zip";a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    report.textContent="レビュー用ZIP取得（発注不可）"+(snapshot!==JSON.stringify(project)?"。クリック時点の設計です。現在の編集内容とは異なります。":"");
+  }catch(e){report.textContent="取得不可: "+e.message}
+  finally{button.disabled=false}
+};
 $("import").onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2000000)throw new Error("JSONが大きすぎます");const next=validateProject(JSON.parse(await file.text()),catalog);if(confirm("現在のプロジェクトを置換しますか？"))(resetZoneEdit(),setProject(next,"JSONを読み込みました"))}catch(err){status("読込失敗: "+err.message)}finally{e.target.value=""}};

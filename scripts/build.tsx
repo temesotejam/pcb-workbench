@@ -229,9 +229,16 @@ if(args.length!==0&&(args.length!==2||args[0]!=="--project-json"))throw new Erro
 const standalone=args.length===2
 // Parse before removing output; do not publish arbitrary browser exports to Pages.
 const input=standalone?projectToCircuitPlan(JSON.parse(await readFile(resolve(args[1]),"utf8")),catalog,{allowManual:true,allowZones:process.env.PCBWB_ZONE_FILL==="1"}):null
-const out=resolve(root,standalone?"dist-native":"dist")
-await rm(out,{recursive:true,force:true})
-await mkdir(out,{recursive:true})
+const privateOutput=process.env.PCBWB_PRIVATE_OUTPUT
+if(privateOutput&&!standalone)throw new Error("Private output requires a standalone project")
+const out=privateOutput?resolve(privateOutput):resolve(root,standalone?"dist-native":"dist")
+if(privateOutput){
+  // Never remove an existing override directory.
+  await mkdir(out,{recursive:false})
+}else{
+  await rm(out,{recursive:true,force:true})
+  await mkdir(out,{recursive:true})
+}
 if(!standalone){
 await cp(resolve(root,"site"),out,{recursive:true})
 const handoff=await Bun.build({entrypoints:[resolve(root,"site/handoff-entry.js")],target:"browser",outdir:out,naming:"handoff.js",minify:true})
@@ -271,10 +278,10 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
     let json=circuit.getCircuitJson()
     const mixed=plan?.manualProject&&plan.mixedRouting?splitManualProject(plan.manualProject):null
     let compiledManualProject=plan?.manualProject
-    const obstacleMode=process.env.PCBWB_OBSTACLE_ROUTER==="1"&&Boolean(mixed)
-    const twoLayerMode=process.env.PCBWB_OBSTACLE_TWO_LAYER==="1"
+    const obstacleMode=(process.env.PCBWB_OBSTACLE_ROUTER==="1"||Boolean(privateOutput))&&Boolean(mixed)
+    const twoLayerMode=privateOutput?obstacleMode:process.env.PCBWB_OBSTACLE_TWO_LAYER==="1"
     if(twoLayerMode&&!obstacleMode)throw new Error("Two-layer obstacle mode requires opt-in mixed routing")
-    const retryReverse=process.env.PCBWB_OBSTACLE_REVERSE_RETRY==="1"
+    const retryReverse=privateOutput?twoLayerMode:process.env.PCBWB_OBSTACLE_REVERSE_RETRY==="1"
     if(retryReverse&&!twoLayerMode)throw new Error("Reverse retry requires opt-in two-layer routing")
     if(plan?.manualProject&&engine){
       const parts:Record<string,unknown>={}
