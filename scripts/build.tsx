@@ -10,6 +10,7 @@ import { NativeDesign } from "./native-design"
 import catalog from "../library/catalog.json"
 import { normalizeFootprint } from "../site/footprint-preview.js"
 import { injectManualRoutes, verifyKicadManualSegments } from "./manual-route-export.js"
+import { splitManualProject, prepareMixedRouting, mixedManualSegmentBlocks } from "./mixed-route-export.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -256,7 +257,7 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
   if(meta.id!==id)throw new Error("Project id mismatch: "+id)
   const path=resolve(out,"projects",id)
   await mkdir(path,{recursive:true})
-  const result={id,name:meta.name,revision:meta.revision,purpose:meta.purpose,status:"blocked",...(plan?.manualProject?{expectedViaDrills:plan.manualProject.routes.flatMap((r:any)=>r.waypoints.filter((p:any)=>p.via).map((p:any)=>({x:p.x,y:p.y,drill:p.via.drill})))}:{}),parts:[] as ReturnType<typeof resolveParts>,errors:[] as string[],files:[] as string[]}
+  const result={id,name:meta.name,revision:meta.revision,purpose:meta.purpose,fabricationLayers:meta.layers,status:"blocked",...(plan?.manualProject?{expectedViaDrills:plan.manualProject.routes.flatMap((r:any)=>r.waypoints.filter((p:any)=>p.via).map((p:any)=>({x:p.x,y:p.y,drill:p.via.drill})))}:{}),parts:[] as ReturnType<typeof resolveParts>,errors:[] as string[],files:[] as string[]}
   try{
     result.parts=resolveParts(meta.parts)
     const circuit=new Circuit({platform:{footprintLibraryMap:{jlcpcb:jlcpcbFootprintResolver}}})
@@ -266,13 +267,17 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
     else {const Design=(await import(resolve(dir,"design.tsx"))).default;circuit.add(<Design />)}
     await circuit.renderUntilSettled()
     let json=circuit.getCircuitJson()
+    const mixed=plan?.manualProject&&plan.mixedRouting?splitManualProject(plan.manualProject):null
     if(plan?.manualProject&&engine){
       const parts:Record<string,unknown>={}
       for(const lcsc of new Set<string>(plan.manualProject.components.map((c:any)=>c.lcsc))){
         const exact=await jlcpcbFootprintResolver(lcsc)
         parts[lcsc]={pads:normalizeFootprint(exact.footprintCircuitJson)}
       }
-      json=injectManualRoutes(json,plan.manualProject,{parts},engine.aliases)
+      if(mixed){
+        const {unrouted,retained}=prepareMixedRouting(json,mixed.automaticNets,engine.aliases)
+        json=[...injectManualRoutes(unrouted,mixed.manual,{parts},engine.aliases),...retained]
+      }else json=injectManualRoutes(json,plan.manualProject,{parts},engine.aliases)
     }
     const namedNets=json.filter((x:any)=>x.type==="source_net").map((x:any)=>x.name)
     for(const expected of engine?.plan.nets??meta.expectedNets??[])if(!namedNets.includes(expected))throw new Error("Named net missing from Circuit JSON: "+expected)
@@ -294,7 +299,9 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
         if(blocks("zone").length||blocks("arc").length)throw new Error("Unexpected KiCad zones or arc tracks in manual mode")
         const viaBlocks=blocks("via")
         console.log(id,"serialized via count",viaBlocks.length,"route-defined via count",json.filter((e:any)=>e.type==="pcb_trace").flatMap((e:any)=>e.route).filter((p:any)=>p.route_type==="via").length)
-        const audit=verifyKicadManualSegments(pcbText,blocks("segment"),json,plan.manualProject,viaBlocks)
+        const segments=blocks("segment")
+        const manualSegments=mixed?mixedManualSegmentBlocks(pcbText,segments,mixed.manual.nets.map((n:any)=>n.name),mixed.automaticNets):segments
+        const audit={...verifyKicadManualSegments(pcbText,manualSegments,json,mixed?.manual??plan.manualProject,viaBlocks),...(mixed?{automaticNets:mixed.automaticNets,automaticSegments:segments.length-manualSegments.length}:{})}
         console.log(id,"serialized manual route parity",JSON.stringify(audit))
         await writeFile(resolve(path,"manual-route-parity.json"),JSON.stringify(audit,null,2));result.files.push("manual-route-parity.json")
       }

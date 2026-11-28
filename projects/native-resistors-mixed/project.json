@@ -1,0 +1,5 @@
+{
+  "id": "native-resistors-mixed",
+  "name": "Independent resistor pair — explicit manual routing — mixed routing",
+  "purpose": "Mixed whole-net routing integration fixture; not order-ready"
+}
