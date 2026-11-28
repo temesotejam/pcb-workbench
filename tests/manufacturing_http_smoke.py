@@ -43,8 +43,8 @@ def run():
                     body = response.read()
                     assert response.headers["X-PCBWB-Source-SHA256"] == hashlib.sha256(source).hexdigest()
                     assert response.headers["X-PCBWB-Bundle-SHA256"] == hashlib.sha256(body).hexdigest()
-                with zipfile.ZipFile(io.BytesIO(body)) as archive:
                     assert response.headers["Content-Type"] == "application/zip"
+                with zipfile.ZipFile(io.BytesIO(body)) as archive:
                     assert set(archive.namelist()) == set(FILES) | {"source-project.json","source-sha256.txt"}
                     assert archive.read("source-project.json") == source
                     assert archive.read("source-sha256.txt").decode().strip() == hashlib.sha256(source).hexdigest()
