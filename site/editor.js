@@ -163,6 +163,9 @@ $("manufacture").onclick=async()=>{
   const snapshot=JSON.stringify(project);
   button.disabled=true;report.textContent="製造サービスを確認中…";
   try{
+    if(!globalThis.crypto?.subtle)throw Error("製造ZIPの照合にはHTTPSまたはlocalhostが必要です");
+    const sha256=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes)),b=>b.toString(16).padStart(2,"0")).join("");
+    const sourceHash=await sha256(new TextEncoder().encode(snapshot));
     const endpoint=new URL("/api/manufacture",location.origin);
     const probe=await fetch(endpoint,{cache:"no-store",redirect:"error"});
     if(!probe.ok||!probe.headers.get("content-type")?.includes("application/json"))throw Error("製造サービス未接続（GitHub Pages単体では利用不可）");
@@ -176,7 +179,21 @@ $("manufacture").onclick=async()=>{
       throw Error(message);
     }
     if(!response.headers.get("content-type")?.startsWith("application/zip"))throw Error("不正な製造レスポンス");
-    const url=URL.createObjectURL(await response.blob()),a=el("a",null,document.body);
+    if(response.headers.get("X-PCBWB-Source-SHA256")!==sourceHash)throw Error("製造元の設計ハッシュが一致しません");
+    const bundleHash=response.headers.get("X-PCBWB-Bundle-SHA256");
+    if(!bundleHash||!/^[0-9a-f]{64}$/.test(bundleHash))throw Error("製造ZIPの照合情報がありません");
+    const maxBytes=34*1024*1024;
+    const declared=response.headers.get("Content-Length");
+    if(declared!==null&&(!/^\d+$/.test(declared)||Number(declared)>maxBytes))throw Error("製造ZIPのサイズが不正です");
+    if(!response.body)throw Error("製造ZIPがありません");
+    const reader=response.body.getReader(),chunks=[];let size=0;
+    try{
+      for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>maxBytes){await reader.cancel();throw Error("製造ZIPが大きすぎます")}chunks.push(value)}
+    }finally{reader.releaseLock()}
+    const bytes=new Uint8Array(size);let offset=0;
+    for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength}
+    if(size<4||bytes[0]!==80||bytes[1]!==75||bytes[2]!==3||bytes[3]!==4||await sha256(bytes)!==bundleHash)throw Error("製造ZIPの内容が一致しません");
+    const url=URL.createObjectURL(new Blob([bytes],{type:"application/zip"})),a=el("a",null,document.body);
     a.href=url;a.download="PCBWB-DRAFT-DO-NOT-ORDER.zip";a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
     report.textContent="レビュー用ZIP取得（発注不可）"+(snapshot!==JSON.stringify(project)?"。クリック時点の設計です。現在の編集内容とは異なります。":"");
   }catch(e){report.textContent="取得不可: "+e.message}

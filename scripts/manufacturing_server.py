@@ -165,7 +165,7 @@ def make_handler(origin, static, runner=manufacture):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(static), **kwargs)
 
-        def reply(self, status, body, kind="application/json", attachment=False):
+        def reply(self, status, body, kind="application/json", attachment=False, source=None):
             self.send_response(status)
             self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(body)))
@@ -173,6 +173,8 @@ def make_handler(origin, static, runner=manufacture):
             self.send_header("X-Content-Type-Options", "nosniff")
             if attachment:
                 self.send_header("Content-Disposition", 'attachment; filename="PCBWB-DRAFT-DO-NOT-ORDER.zip"')
+                self.send_header("X-PCBWB-Source-SHA256", hashlib.sha256(source).hexdigest())
+                self.send_header("X-PCBWB-Bundle-SHA256", hashlib.sha256(body).hexdigest())
             self.end_headers()
             self.wfile.write(body)
 
@@ -208,7 +210,7 @@ def make_handler(origin, static, runner=manufacture):
                 return self.error_json(422, str(exc))
             except (OSError, ValueError, KeyError, TypeError):
                 return self.error_json(500, "Manufacturing unavailable or invalid engine output")
-            return self.reply(200, result, "application/zip", attachment=True)
+            return self.reply(200, result, "application/zip", attachment=True, source=source)
 
     return Handler
 

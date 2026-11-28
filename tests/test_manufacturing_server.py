@@ -130,6 +130,8 @@ class ManufacturingServerTests(unittest.TestCase):
                     with post(b'{"name":"snapshot"}') as response:
                         self.assertEqual(response.read(),b"zip")
                         self.assertEqual(response.headers["Content-Type"],"application/zip")
+                        self.assertEqual(response.headers["X-PCBWB-Source-SHA256"], hashlib.sha256(b'{"name":"snapshot"}').hexdigest())
+                        self.assertEqual(response.headers["X-PCBWB-Bundle-SHA256"], hashlib.sha256(b"zip").hexdigest())
                     self.assertEqual(calls,[b'{"name":"snapshot"}'])
                     with self.assertRaises(HTTPError) as error:
                         post(b"bad")
