@@ -12,6 +12,10 @@ on:
       - 'site/route-geometry.js'
       - 'site/footprint-preview.js'
       - 'site/project-model.js'
+      - 'site/editor.js'
+      - 'site/editor.html'
+      - 'tests/browser_manufacturing.py'
+      - 'tests/manufacturing_http_smoke.py'
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/manufacturing.yml'
@@ -26,6 +30,10 @@ on:
       - 'site/route-geometry.js'
       - 'site/footprint-preview.js'
       - 'site/project-model.js'
+      - 'site/editor.js'
+      - 'site/editor.html'
+      - 'tests/browser_manufacturing.py'
+      - 'tests/manufacturing_http_smoke.py'
       - 'package.json'
       - 'bun.lock'
       - '.github/workflows/manufacturing.yml'
@@ -131,8 +139,15 @@ jobs:
           python3 scripts/fabricate.py dist-native dist-native/input-projects
           node --input-type=module -e 'import fs from "node:fs";import assert from "node:assert/strict";const s=JSON.parse(fs.readFileSync("dist-native/projects/native/project.json"));assert.equal(s.status,"draft");assert.equal(s.orderReady,false);assert.equal(s.expectedViaDrills.length,4);assert.ok(s.expectedViaDrills.every(v=>v.drill===.3));assert.ok(s.drillParity);assert.deepEqual(s.zoneParity.map(z=>[z.id,z.net,z.layer]).sort(),[["Z1","/SUPPLY","F.Cu"],["Z2","/SUPPLY_B","F.Cu"],["Z3","/RETURN","B.Cu"],["Z4","/RETURN_B","B.Cu"]]);assert.ok(s.zoneParity.every(z=>z.polygonAreaMm2>1));console.log(JSON.stringify({zoneParity:s.zoneParity,drillParity:s.drillParity}));'
           cp -r dist-native/projects/native zone-verification/disjoint-zones-vias
-      - name: Verify same-origin HTTP manufacturing for two independent designs
+      - name: Verify same-origin HTTP manufacturing for three independent designs
         run: PYTHONPATH=. python3 tests/manufacturing_http_smoke.py
+      - name: Install pinned browser test runner
+        run: |
+          python3 -m venv /tmp/pcb-browser-venv
+          /tmp/pcb-browser-venv/bin/pip install playwright==1.51.0
+          /tmp/pcb-browser-venv/bin/playwright install --with-deps chromium
+      - name: Real Chromium download from live independent manufacturing service
+        run: PYTHONPATH=. /tmp/pcb-browser-venv/bin/python tests/browser_manufacturing.py
       - name: Upload draft manufacturing files and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
