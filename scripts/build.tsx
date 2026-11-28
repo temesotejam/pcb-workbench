@@ -12,6 +12,7 @@ import { normalizeFootprint } from "../site/footprint-preview.js"
 import { injectManualRoutes, verifyKicadManualSegments } from "./manual-route-export.js"
 import { splitManualProject, prepareMixedRouting, mixedManualSegmentBlocks } from "./mixed-route-export.js"
 import { buildMixedAutorouterInput } from "./autorouter-input.js"
+import { appendCandidate, solveTopCandidate } from "./obstacle-solver.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -269,6 +270,8 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
     await circuit.renderUntilSettled()
     let json=circuit.getCircuitJson()
     const mixed=plan?.manualProject&&plan.mixedRouting?splitManualProject(plan.manualProject):null
+    let compiledManualProject=plan?.manualProject
+    const obstacleMode=process.env.PCBWB_OBSTACLE_ROUTER==="1"&&Boolean(mixed)
     if(plan?.manualProject&&engine){
       const parts:Record<string,unknown>={}
       for(const lcsc of new Set<string>(plan.manualProject.components.map((c:any)=>c.lcsc))){
@@ -276,11 +279,21 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
         parts[lcsc]={pads:normalizeFootprint(exact.footprintCircuitJson)}
       }
       if(mixed){
-        const {unrouted,retained}=prepareMixedRouting(json,mixed.automaticNets,engine.aliases)
+        const {unrouted,retained}=obstacleMode?{unrouted:json,retained:[]}:prepareMixedRouting(json,mixed.automaticNets,engine.aliases)
         const routingInput=buildMixedAutorouterInput(plan.manualProject,{parts},unrouted)
         await writeFile(resolve(path,"autorouter-input.json"),JSON.stringify(routingInput,null,2));result.files.push("autorouter-input.json")
-        console.log(id,"draft obstacle routing input",routingInput.connections.length,"connections",routingInput.obstacles.length,"obstacles (solver not invoked)")
-        json=[...injectManualRoutes(unrouted,mixed.manual,{parts},engine.aliases),...retained]
+        if(obstacleMode){
+          const {AutoroutingPipelineSolver}=await import("@tscircuit/capacity-autorouter")
+          const candidate=solveTopCandidate(routingInput,AutoroutingPipelineSolver)
+          compiledManualProject=appendCandidate(plan.manualProject,candidate)
+          projectToCircuitPlan(compiledManualProject,catalog,{allowManual:true})
+          json=injectManualRoutes(unrouted,compiledManualProject,{parts},engine.aliases)
+          await writeFile(resolve(path,"obstacle-route-candidate.json"),JSON.stringify({project:compiledManualProject,candidate,orderReady:false},null,2));result.files.push("obstacle-route-candidate.json")
+          console.log(id,"obstacle candidate",candidate.name,candidate.segments,"segments")
+        }else{
+          console.log(id,"draft obstacle routing input",routingInput.connections.length,"connections",routingInput.obstacles.length,"obstacles (solver not invoked)")
+          json=[...injectManualRoutes(unrouted,mixed.manual,{parts},engine.aliases),...retained]
+        }
       }else json=injectManualRoutes(json,plan.manualProject,{parts},engine.aliases)
     }
     const namedNets=json.filter((x:any)=>x.type==="source_net").map((x:any)=>x.name)
@@ -304,8 +317,8 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
         const viaBlocks=blocks("via")
         console.log(id,"serialized via count",viaBlocks.length,"route-defined via count",json.filter((e:any)=>e.type==="pcb_trace").flatMap((e:any)=>e.route).filter((p:any)=>p.route_type==="via").length)
         const segments=blocks("segment")
-        const manualSegments=mixed?mixedManualSegmentBlocks(pcbText,segments,mixed.manual.nets.map((n:any)=>n.name),mixed.automaticNets):segments
-        const audit={...verifyKicadManualSegments(pcbText,manualSegments,json,mixed?.manual??plan.manualProject,viaBlocks),...(mixed?{automaticNets:mixed.automaticNets,automaticSegments:segments.length-manualSegments.length}:{})}
+        const manualSegments=mixed&&!obstacleMode?mixedManualSegmentBlocks(pcbText,segments,mixed.manual.nets.map((n:any)=>n.name),mixed.automaticNets):segments
+        const audit={...verifyKicadManualSegments(pcbText,manualSegments,json,obstacleMode?compiledManualProject:(mixed?.manual??plan.manualProject),viaBlocks),...(mixed&&!obstacleMode?{automaticNets:mixed.automaticNets,automaticSegments:segments.length-manualSegments.length}:{})}
         console.log(id,"serialized manual route parity",JSON.stringify(audit))
         await writeFile(resolve(path,"manual-route-parity.json"),JSON.stringify(audit,null,2));result.files.push("manual-route-parity.json")
       }
