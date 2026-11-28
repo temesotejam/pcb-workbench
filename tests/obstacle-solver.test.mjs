@@ -186,3 +186,30 @@ test("widened candidate must pass clearance at the actual exported width",()=>{
  assert.throws(()=>validateTwoLayerResult(p,trace(narrow)),/copper clearance on bottom/);
  assert.throws(()=>validateTwoLayerResult({...p,minTraceWidth:0},trace(narrow)),/invalid minimum trace width/);
 });
+
+test("optional reverse retry discards failed partial copper and preserves original result order",()=>{
+ const before=JSON.stringify(twoBatch),seen=[];
+ class OrderSensitive{
+  constructor(p){this.p=p;seen.push([p.connections[0].name,p.obstacles.length])}
+  step(){if(this.p.connections[0].name==="B"&&this.p.obstacles.length){this.failed=true;this.error="blocked by earlier route"}else this.solved=true}
+  getOutputSimpleRouteJson(){return this.p.connections[0].name==="A"?trace(crossing):trace([w(0,"top",-4),w(0,"top",4)])}
+ }
+ assert.throws(()=>solveTwoLayerCandidates(twoBatch,OrderSensitive),/blocked by earlier route/);
+ seen.length=0;
+ const candidates=solveTwoLayerCandidates(twoBatch,OrderSensitive,{retryReverse:true});
+ assert.deepEqual(seen.map(x=>x[0]),["A","B","B","A"]);
+ assert.equal(seen[2][1],0);
+ assert.deepEqual(candidates.map(c=>[c.name,c.vias]),[["A",2],["B",0]]);
+ assert.equal(JSON.stringify(twoBatch),before);
+});
+test("reverse retry does not accept malformed geometry or partially successful batches",()=>{
+ let calls=0;
+ class Malformed{
+  constructor(){calls++}step(){this.solved=true}getOutputSimpleRouteJson(){return trace([])}
+ }
+ assert.throws(()=>solveTwoLayerCandidates(twoBatch,Malformed,{retryReverse:true}),/unsupported two-layer geometry/);
+ assert.equal(calls,1);
+ class AlwaysBlocked{constructor(){calls++}step(){this.failed=true;this.error="blocked"}}
+ assert.throws(()=>solveTwoLayerCandidates(twoBatch,AlwaysBlocked,{retryReverse:true}),/both routing orders failed/);
+ assert.equal(calls,3);
+});
