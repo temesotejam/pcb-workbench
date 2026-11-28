@@ -13,8 +13,10 @@ import zipfile
 
 if __package__:
     from .drill_audit import audit_manual_via_drills
+    from .zone_fill import inject_zones, audit_filled_zones, audit_zone_gerbers
 else:
     from drill_audit import audit_manual_via_drills
+    from zone_fill import inject_zones, audit_filled_zones, audit_zone_gerbers
 
 def csv_write(path, fields, rows):
     with path.open("w", encoding="utf-8", newline="") as f:
@@ -95,6 +97,7 @@ def process(root, meta_path):
         (dest/name).unlink(missing_ok=True)
     summary.pop("draftFiles", None)
     summary.pop("drillParity", None)
+    summary.pop("zoneParity", None)
     summary["files"] = [n for n in summary["files"] if n not in ("erc.json", "drc.json", "validation.json")]
     warnings = []
 
@@ -105,7 +108,7 @@ def process(root, meta_path):
             summary.pop("draftFiles", None)
         blockers.append("Production release gate disabled; manual JLCPCB preview and engineering review not implemented.")
         summary.update(status="draft" if ok else "blocked", blockers=blockers, orderReady=False)
-        validation_text = json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False, "drillParity":summary.get("drillParity")},indent=2)
+        validation_text = json.dumps({"blockers":blockers,"warnings":warnings,"commands":log,"orderReady":False, "drillParity":summary.get("drillParity"),"zoneParity":summary.get("zoneParity")},indent=2)
         (dest/"validation.json").write_text(validation_text)
         if ok:
             (draft/"validation.json").write_text(validation_text)
@@ -116,13 +119,20 @@ def process(root, meta_path):
         return ok
     try:
         layers = fabrication_layers(summary, meta)
-    except ValueError as exc:
+        zones = summary.get("expectedZones")
+        if zones != meta.get("expectedZones"):
+            raise ValueError("Zone model and build summary differ")
+        if zones is not None:
+            if any({"top":"F.Cu","bottom":"B.Cu"}.get(z["layer"]) not in layers for z in zones):
+                raise ValueError("Missing zone fabrication layer")
+            board.write_text(inject_zones(board.read_text(),zones))
+    except (ValueError, KeyError, TypeError, OSError) as exc:
         blockers.append(str(exc))
         return finish(False)
     # Absolute coordinates for all three exports; no independently shifted origins.
     checks = [
         ["sch","erc","--severity-all","--format","json","-o",dest/"erc.json",sch],
-        ["pcb","drc","--schematic-parity","--severity-all","--format","json","-o",dest/"drc.json",board],
+        ["pcb","drc","--schematic-parity","--severity-all","--format","json",*(["--refill-zones","--save-board"] if zones is not None else []),"-o",dest/"drc.json",board],
     ]
     checks_ok = not blockers
     for cmd in checks:
@@ -198,6 +208,12 @@ def process(root, meta_path):
         if unconnected:
             checks_ok = False
             blockers.append("PCB has " + str(len(unconnected)) + " unconnected item(s)")
+    if zones is not None and checks_ok:
+        try:
+            summary["zoneParity"] = audit_filled_zones(board.read_text(),zones)
+        except (ValueError, KeyError, TypeError, IndexError, OSError) as exc:
+            checks_ok = False
+            blockers.append("Zone fill audit: " + str(exc))
     # A failed electrical or geometric check is not a fabrication candidate.
     if not checks_ok:
         return finish(False)
@@ -216,6 +232,8 @@ def process(root, meta_path):
             raise ValueError("No Gerber copper files")
         if not any(p.suffix.lower()==".gko" or "edge_cuts" in p.name.lower() or "edge.cuts" in p.name.lower() for p in plotted):
             raise ValueError("No identifiable board-outline output")
+        if zones is not None:
+            audit_zone_gerbers(plotted, summary["zoneParity"])
         if "expectedViaDrills" in summary:
             summary["drillParity"] = audit_manual_via_drills(plotted, summary["expectedViaDrills"])
         with (draft/"positions.csv").open(encoding="utf-8-sig",newline="") as f:
