@@ -217,28 +217,42 @@ export function solveTwoLayerCandidate(input,Solver,deadline=Date.now()+30000){
 
  // Experimental two-layer batch; use the same per-net physical audit and
  // treat each previously accepted track and via as foreign copper.
-export function solveTwoLayerCandidates(input,Solver){
+export function solveTwoLayerCandidates(input,Solver,{retryReverse=false}={}){
   const connections=input.connections;
   if(input.layerCount!==2||!Array.isArray(connections)||connections.length<1||connections.length>8||
     new Set(connections.map(c=>c.name)).size!==connections.length||
     connections.some(c=>typeof c.name!=="string"||!c.name||!Array.isArray(c.pointsToConnect)||c.pointsToConnect.length!==2||c.pointsToConnect.some(p=>p.layer!=="top"||![p.x,p.y].every(Number.isFinite))))fail("requires exactly two layers and 1–8 distinct untouched two-terminal top nets");
-  const working=structuredClone(input),candidates=[],deadline=Date.now()+30000;
-  for(const connection of working.connections){
-    const candidate=solveTwoLayerCandidate({...working,connections:[connection]},Solver,deadline);
-    const points=[connection.pointsToConnect[0],...candidate.waypoints,connection.pointsToConnect[1]];
-    let layer="top";
-    const segments=[],vias=[];
-    for(let i=1;i<points.length;i++){
-      const from=points[i-1],to=points[i];
-      segments.push({from,to,width:candidate.width,layer});
-      if(to.via){
-        vias.push({x:to.x,y:to.y,...to.via});
-        layer=layer==="top"?"bottom":"top";
+  const deadline=Date.now()+30000;
+  // Every attempt starts from original copper, never from a failed partial
+  // batch. Preserve the user's net order in the returned candidates.
+  const attempt=order=>{
+    const working=structuredClone(input),candidates=[];
+    for(const connection of order){
+      const candidate=solveTwoLayerCandidate({...working,connections:[connection]},Solver,deadline);
+      const points=[connection.pointsToConnect[0],...candidate.waypoints,connection.pointsToConnect[1]];
+      let layer="top";
+      const segments=[],vias=[];
+      for(let i=1;i<points.length;i++){
+        const from=points[i-1],to=points[i];
+        segments.push({from,to,width:candidate.width,layer});
+        if(to.via){
+          vias.push({x:to.x,y:to.y,...to.via});
+          layer=layer==="top"?"bottom":"top";
+        }
       }
+      if(layer!=="top")fail("batch route must return to top");
+      working.obstacles.push(...copperObstacles({segments,vias}));
+      candidates.push(candidate);
     }
-    if(layer!=="top")fail("batch route must return to top");
-    working.obstacles.push(...copperObstacles({segments,vias}));
-    candidates.push(candidate);
+    return connections.map(c=>candidates.find(candidate=>candidate.name===c.name));
+  };
+  try{return attempt(connections)}
+  catch(first){
+    // Retry only genuine routing/clearance failures, not malformed geometry,
+    // missing terminal identities, invalid inputs, or exhausted time budgets.
+    const recoverable=/^Obstacle router: (solver failed:|copper clearance|via copper clearance|via-to-via clearance|board-edge clearance|via board-edge)/;
+    if(!retryReverse||connections.length<2||Date.now()>=deadline||!recoverable.test(first?.message??""))throw first;
+    try{return attempt([...connections].reverse())}
+    catch(second){fail("both routing orders failed: "+String(first?.message??first)+"; reverse: "+String(second?.message??second))}
   }
-  return candidates;
 }
