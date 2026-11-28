@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {topSolverInput,validateTopResult,solveTopCandidate,appendCandidate} from "../scripts/obstacle-solver.js";
+import {topSolverInput,validateTopResult,solveTopCandidate,solveTopCandidates,appendCandidate} from "../scripts/obstacle-solver.js";
 const input={layerCount:2,minTraceWidth:.2,bounds:{minX:-5,maxX:5,minY:-5,maxY:5},connections:[{name:"RETURN",pointsToConnect:[{x:-4,y:0,layer:"top"},{x:4,y:0,layer:"top"}]}],obstacles:[{type:"rect",layers:["top"],center:{x:0,y:0},width:1,height:2,connectedTo:[]},{type:"rect",layers:["bottom"],center:{x:0,y:2},width:1,height:1,connectedTo:[]}]};
 const out=points=>({traces:[{type:"pcb_trace",route:points.map(([x,y])=>({route_type:"wire",x,y,width:.2,layer:"top"}))}]});
 const detour=out([[-4,0],[-2,2],[2,2],[4,0]]);
@@ -61,4 +61,38 @@ test("solver input does not share obstacle centers with the source",()=>{
  const p=structuredClone(input),prepared=topSolverInput(p);
  prepared.obstacles[0].center.x=99;
  assert.equal(p.obstacles[0].center.x,0);
+});
+
+const batch={...input,obstacles:[],connections:[
+ {name:"A",pointsToConnect:[{x:-2,y:0,layer:"top"},{x:2,y:0,layer:"top"}]},
+ {name:"B",pointsToConnect:[{x:0,y:-4,layer:"top"},{x:0,y:4,layer:"top"}]}
+]};
+test("sequential batch adds first route as obstacle for the second and preserves source",()=>{
+ const before=JSON.stringify(batch),seen=[];
+ class Good{
+  constructor(p){this.p=p;seen.push(p)}
+  step(){this.solved=true}
+  getOutputSimpleRouteJson(){return this.p.connections[0].name==="A"?out([[-2,0],[2,0]]):out([[0,-4],[3.5,-2],[3.5,2],[0,4]])}
+ }
+ const results=solveTopCandidates(batch,Good);
+ assert.deepEqual(results.map(r=>r.name),["A","B"]);
+ assert.equal(seen[1].obstacles.length,1);
+ assert.equal(seen[1].obstacles[0].connectedTo.length,0);
+ assert.ok(seen[1].obstacles[0].width>4.2);
+ assert.equal(JSON.stringify(batch),before);
+});
+test("batch rejects a later crossing atomically and preflights unsupported nets",()=>{
+ const before=JSON.stringify(batch);
+ let calls=0;
+ class Crossing{
+  constructor(p){this.p=p;calls++}
+  step(){this.solved=true}
+  getOutputSimpleRouteJson(){return this.p.connections[0].name==="A"?out([[-2,0],[2,0]]):out([[0,-4],[0,4]])}
+ }
+ assert.throws(()=>solveTopCandidates(batch,Crossing),/copper clearance/);
+ assert.equal(calls,2);
+ assert.equal(JSON.stringify(batch),before);
+ const invalid=structuredClone(batch);invalid.connections[1].pointsToConnect.push({x:1,y:1,layer:"top"});
+ assert.throws(()=>solveTopCandidates(invalid,Crossing),/distinct untouched/);
+ assert.equal(calls,2);
 });
