@@ -12,7 +12,7 @@ import { normalizeFootprint } from "../site/footprint-preview.js"
 import { injectManualRoutes, verifyKicadManualSegments } from "./manual-route-export.js"
 import { splitManualProject, prepareMixedRouting, mixedManualSegmentBlocks } from "./mixed-route-export.js"
 import { buildMixedAutorouterInput } from "./autorouter-input.js"
-import { appendCandidate, solveTopCandidate } from "./obstacle-solver.js"
+import { appendCandidate, solveTopCandidates } from "./obstacle-solver.js"
 
 type SExprBlock = { start:number; end:number; text:string }
 function sexprBlocks(source:string, token:string):SExprBlock[] {
@@ -284,12 +284,12 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
         await writeFile(resolve(path,"autorouter-input.json"),JSON.stringify(routingInput,null,2));result.files.push("autorouter-input.json")
         if(obstacleMode){
           const {AutoroutingPipelineSolver}=await import("pcbwb-capacity-autorouter")
-          const candidate=solveTopCandidate(routingInput,AutoroutingPipelineSolver)
-          compiledManualProject=appendCandidate(plan.manualProject,candidate)
+          const candidates=solveTopCandidates(routingInput,AutoroutingPipelineSolver)
+          compiledManualProject=candidates.reduce((project,candidate)=>appendCandidate(project,candidate),plan.manualProject)
           projectToCircuitPlan(compiledManualProject,catalog,{allowManual:true})
           json=injectManualRoutes(unrouted,compiledManualProject,{parts},engine.aliases)
-          await writeFile(resolve(path,"obstacle-route-candidate.json"),JSON.stringify({project:compiledManualProject,candidate,orderReady:false},null,2));result.files.push("obstacle-route-candidate.json")
-          console.log(id,"obstacle candidate",candidate.name,candidate.segments,"segments")
+          await writeFile(resolve(path,"obstacle-route-candidate.json"),JSON.stringify({project:compiledManualProject,candidates,...(candidates.length===1?{candidate:candidates[0]}:{}),orderReady:false},null,2));result.files.push("obstacle-route-candidate.json")
+          for(const candidate of candidates)console.log(id,"obstacle candidate",candidate.name,candidate.segments,"segments")
         }else{
           console.log(id,"draft obstacle routing input",routingInput.connections.length,"connections",routingInput.obstacles.length,"obstacles (solver not invoked)")
           json=[...injectManualRoutes(unrouted,mixed.manual,{parts},engine.aliases),...retained]
