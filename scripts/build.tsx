@@ -283,7 +283,7 @@ for(const id of (standalone?["native"]:(await readdir(resolve(root,"projects")))
         const routingInput=buildMixedAutorouterInput(plan.manualProject,{parts},unrouted)
         await writeFile(resolve(path,"autorouter-input.json"),JSON.stringify(routingInput,null,2));result.files.push("autorouter-input.json")
         if(obstacleMode){
-          const {AutoroutingPipelineSolver}=await import("@tscircuit/capacity-autorouter")
+          const {AutoroutingPipelineSolver}=await import("pcbwb-capacity-autorouter")
           const candidate=solveTopCandidate(routingInput,AutoroutingPipelineSolver)
           compiledManualProject=appendCandidate(plan.manualProject,candidate)
           projectToCircuitPlan(compiledManualProject,catalog,{allowManual:true})
