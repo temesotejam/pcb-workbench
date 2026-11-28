@@ -1,5 +1,6 @@
 // Conservative draft adapter for the pinned MIT capacity-autorouter.
- // Only one untouched two-terminal top net, constant width, no automatic vias.
+// Sequential untouched two-terminal top nets, constant width, no automatic vias.
+import {copperObstacles} from "./autorouter-input.js";
 const clearance=.2, edge=.5, eps=1e-6;
 const near=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y)<=eps;
 const fail=m=>{throw new Error("Obstacle router: "+m)};
@@ -67,9 +68,9 @@ export function validateTopResult(input,output){
   }
   return {name:connection.name,width,waypoints:points.slice(1,-1),segments:points.length-1};
 }
-export function solveTopCandidate(input,Solver){
+export function solveTopCandidate(input,Solver,deadline=Date.now()+30000){
+  if(Date.now()>deadline)fail("solver budget exhausted");
   const solver=new Solver(topSolverInput(input));
-  const deadline=Date.now()+30000;
   let steps=0;
   while(!solver.solved&&!solver.failed){
     if(++steps>100000||Date.now()>deadline)fail("solver budget exhausted");
@@ -83,4 +84,24 @@ export function appendCandidate(project,candidate){
   if(!net||net.pins.length!==2||project.routes.some(r=>r.net===net.name))fail("net is not untouched");
   let i=1;while(project.routes.some(r=>r.id==="T"+i))i++;
   return {...structuredClone(project),routes:[...structuredClone(project.routes),{id:"T"+i,net:net.name,layer:"top",width:candidate.width,from:{...net.pins[0]},to:{...net.pins[1]},waypoints:structuredClone(candidate.waypoints)}]};
+}
+
+ // Route one net at a time; validated previous copper becomes foreign obstacles.
+ // All-or-nothing: no source mutation or partial results on any failure.
+export function solveTopCandidates(input,Solver){
+  const connections=input.connections;
+  if(!Array.isArray(connections)||connections.length<1||connections.length>8||
+    new Set(connections.map(c=>c.name)).size!==connections.length||
+    connections.some(c=>typeof c.name!=="string"||!c.name||!Array.isArray(c.pointsToConnect)||c.pointsToConnect.length!==2||c.pointsToConnect.some(p=>p.layer!=="top"||![p.x,p.y].every(Number.isFinite))))fail("requires 1–8 distinct untouched two-terminal top nets");
+  const working=structuredClone(input), candidates=[], deadline=Date.now()+30000;
+  for(const connection of working.connections){
+    const single={...working,connections:[connection]};
+    const candidate=solveTopCandidate(single,Solver,deadline);
+    candidates.push(candidate);
+    const points=[connection.pointsToConnect[0],...candidate.waypoints,connection.pointsToConnect[1]];
+    const segments=points.slice(1).map((to,i)=>({from:points[i],to,width:candidate.width,layer:"top"}));
+    // No connection exemption: every later net must avoid this copper.
+    working.obstacles.push(...copperObstacles({segments,vias:[]}));
+  }
+  return candidates;
 }
